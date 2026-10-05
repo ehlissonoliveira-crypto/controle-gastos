@@ -757,6 +757,9 @@ table.shell-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 
 
       <!-- Quick Actions -->
       <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <div id="cloudStatusBadge" style="font-size: 0.72rem; font-weight: 600; padding: 0.3rem 0.65rem; border-radius: 999px; display: inline-flex; align-items: center; gap: 0.35rem; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);" title="Status da sincronização com a nuvem">
+          ☁️ Nuvem conectada
+        </div>
         <button class="btn-action btn-danger-outline btn-sm" id="btnClearAllData" title="Limpar Todos os Dados" style="border-color: rgba(239, 68, 68, 0.6); color: #f87171; background: rgba(239, 68, 68, 0.12);">
           🗑️ Limpar Todos os Dados
         </button>
@@ -1230,11 +1233,3547 @@ table.shell-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 
     </div>
   </div>
 
+    // ==========================================
+    // LIMPAR TODOS OS DADOS
+    // ==========================================
+
+    function limparTodosOsDados() {
+      const confirm1 = confirm("Tem certeza? Isso apaga TODOS os gastos, ganhos, dívidas e recorrentes");
+      if (!confirm1) return;
+
+      const confirm2 = confirm("Confirma de novo? Essa ação não tem volta");
+      if (!confirm2) return;
+
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (e) {
+        console.error('Erro ao remover do localStorage', e);
+      }
+
+      state.data.pessoas = [];
+      state.data.gastos = [];
+      state.data.entradas = [];
+      state.data.dividas = [];
+      state.data.recorrentes = [];
+      state.data.cartoes = [];
+
+      resetFormGasto();
+      resetFormGanho();
+      resetFormDivida();
+      resetFormRecorrente();
+
+      renderAll();
+      alert("Dados apagados. O site está limpo para começar do zero.");
+    }
+
+    // ==========================================
+    // UTILS & INITIALIZATION
+    // ==========================================
+
+    function escapeHtml(str) {State management & Default Data
+    const STORAGE_KEY = 'finControlePremium_v2';
+
+    let state = {
+      period: {
+        year: new Date().getFullYear(),
+        month: new Date().getMonth() // 0-indexed: 0 = Jan, 11 = Dec
+      },
+      activeTab: 'tab-dashboard',
+      data: {
+        pessoas: ['Você', 'Parceiro(a)'],
+        gastos: [],
+        entradas: [],
+        dividas: [],
+        recorrentes: [],
+        cartoes: ['Pix', 'Dinheiro', 'Débito', 'Crédito', 'Cartão Black', 'Cartão Nu', 'Cartão XP'],
+        categorias: ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Educação', 'Compras', 'Outros']
+      }
+    };
+
+    const MONTH_NAMES = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+
+    // Formatters
+    function formatBRL(value) {
+      const v = Number(value) || 0;
+      return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function formatDateBR(isoString) {
+      if (!isoString) return '';
+      const parts = isoString.split('-');
+      if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+      return isoString;
+    }
+
+    function getTodayISO() {
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function getCurrentMonthISO() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    // Persistence
+    function salvarDados() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+      } catch (e) {
+        console.error('Erro ao salvar no localStorage', e);
+      }
+    }
+
+    function carregarDados() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          state.data = {
+            pessoas: parsed.pessoas && parsed.pessoas.length ? parsed.pessoas : ['Você'],
+            gastos: parsed.gastos || [],
+            entradas: parsed.entradas || [],
+            dividas: parsed.dividas || [],
+            recorrentes: parsed.recorrentes || [],
+            cartoes: parsed.cartoes || ['Pix', 'Dinheiro', 'Débito', 'Crédito', 'Cartão Black', 'Cartão Nu', 'Cartão XP'],
+            categorias: parsed.categorias || ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Educação', 'Compras', 'Outros']
+          };
+        } else {
+          // Mock data to ensure immediate end-to-end functionality
+          seedInitialData();
+        }
+      } catch (e) {
+        console.error('Erro ao carregar do localStorage', e);
+        seedInitialData();
+      }
+    }
+
+    function seedInitialData() {
+      const currentYear = new Date().getFullYear();
+      const currentMonth = new Date().getMonth();
+      const mm = String(currentMonth + 1).padStart(2, '0');
+      const prevMonthIdx = currentMonth === 0 ? 11 : currentMonth - 1;
+      const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+      const prevMm = String(prevMonthIdx + 1).padStart(2, '0');
+
+      state.data = {
+        pessoas: ['Gabriel', 'Mariana'],
+        gastos: [
+          {
+            id: 'g-1',
+            descricao: 'Supermercado Mensal',
+            valor: 1420.50,
+            data: `${currentYear}-${mm}-05`,
+            categoria: 'Alimentação',
+            dono: 'Gabriel',
+            forma: 'Cartão Black',
+            parcela: '1/1',
+            dividir: true,
+            anotacoes: 'Compras da dispensa do mês'
+          },
+          {
+            id: 'g-2',
+            descricao: 'Jantar Comemoração',
+            valor: 340.00,
+            data: `${currentYear}-${mm}-12`,
+            categoria: 'Lazer',
+            dono: 'Mariana',
+            forma: 'Crédito',
+            parcela: '1/1',
+            dividir: true,
+            anotacoes: 'Restaurante italiano'
+          },
+          {
+            id: 'g-3',
+            descricao: 'Combustível Posto Ipiranga',
+            valor: 260.00,
+            data: `${currentYear}-${mm}-08`,
+            categoria: 'Transporte',
+            dono: 'Gabriel',
+            forma: 'Débito',
+            parcela: '1/1',
+            dividir: false,
+            anotacoes: ''
+          },
+          {
+            id: 'g-4',
+            descricao: 'Plano Odontológico',
+            valor: 150.00,
+            data: `${currentYear}-${mm}-15`,
+            categoria: 'Saúde',
+            dono: 'Mariana',
+            forma: 'Pix',
+            parcela: '1/1',
+            dividir: false,
+            anotacoes: ''
+          },
+          // Last month sample for comparative
+          {
+            id: 'g-prev-1',
+            descricao: 'Supermercado Mês Passado',
+            valor: 1650.00,
+            data: `${prevYear}-${prevMm}-06`,
+            categoria: 'Alimentação',
+            dono: 'Gabriel',
+            forma: 'Cartão Black',
+            parcela: '1/1',
+            dividir: true,
+            anotacoes: ''
+          },
+          {
+            id: 'g-prev-2',
+            descricao: 'Manutenção Carro',
+            valor: 850.00,
+            data: `${prevYear}-${prevMm}-14`,
+            categoria: 'Transporte',
+            dono: 'Gabriel',
+            forma: 'Pix',
+            parcela: '1/1',
+            dividir: false,
+            anotacoes: ''
+          }
+        ],
+        entradas: [
+          {
+            id: 'e-1',
+            tipo: 'ganho',
+            descricao: 'Salário Gabriel',
+            valor: 7500.00,
+            data: `${currentYear}-${mm}-05`,
+            pessoa: 'Gabriel'
+          },
+          {
+            id: 'e-2',
+            tipo: 'ganho',
+            descricao: 'Salário Mariana',
+            valor: 6800.00,
+            data: `${currentYear}-${mm}-05`,
+            pessoa: 'Mariana'
+          },
+          {
+            id: 'e-3',
+            tipo: 'guardado',
+            descricao: 'Aporte Tesouro Selic',
+            valor: 2000.00,
+            data: `${currentYear}-${mm}-10`,
+            pessoa: 'Gabriel'
+          }
+        ],
+        dividas: [
+          {
+            id: 'd-1',
+            quem: 'Lucas Silva',
+            motivo: 'Divisão de hospedagem na praia',
+            valor: 350.00,
+            data: `${currentYear}-${mm}-02`,
+            pago: false
+          },
+          {
+            id: 'd-2',
+            quem: 'Beatriz Costa',
+            motivo: 'Ingressos do show',
+            valor: 220.00,
+            data: `${currentYear}-${mm}-04`,
+            pago: true
+          }
+        ],
+        recorrentes: [
+          {
+            id: 'r-1',
+            descricao: 'Condomínio Residencial',
+            valor: 680.00,
+            categoria: 'Moradia',
+            dono: 'Gabriel',
+            mesInicio: `${currentYear}-01`,
+            mesFim: ''
+          },
+          {
+            id: 'r-2',
+            descricao: 'Internet Fibra 600MB',
+            valor: 130.00,
+            categoria: 'Moradia',
+            dono: 'Mariana',
+            mesInicio: `${currentYear}-01`,
+            mesFim: ''
+          },
+          {
+            id: 'r-3',
+            descricao: 'Netflix & Spotify',
+            valor: 79.90,
+            categoria: 'Lazer',
+            dono: 'Gabriel',
+            mesInicio: `${currentYear}-01`,
+            mesFim: ''
+          }
+        ],
+        cartoes: ['Pix', 'Dinheiro', 'Débito', 'Crédito', 'Cartão Black', 'Cartão Nu', 'Cartão XP'],
+        categorias: ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Educação', 'Compras', 'Outros']
+      };
+      salvarDados();
+    }
+
+    // Helper: Checks if recurrent is active in specified year and month (0-indexed)
+    function isRecorrenteActive(rec, year, month) {
+      if (!rec.mesInicio) return false;
+      const targetStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+      if (targetStr < rec.mesInicio) return false;
+      if (rec.mesFim && targetStr > rec.mesFim) return false;
+      return true;
+    }
+
+    // Helper: Get active expenses for month including virtual recurrent entries
+    function getGastosDoPeriodo(year, month) {
+      const yearMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+      
+      // Real expenses
+      const directGastos = state.data.gastos.filter(g => g.data && g.data.startsWith(yearMonthPrefix));
+
+      // Virtual recurrent expenses
+      const virtualRecs = state.data.recorrentes
+        .filter(r => isRecorrenteActive(r, year, month))
+        .map(r => ({
+          id: `rec-virtual-${r.id}`,
+          descricao: r.descricao,
+          valor: Number(r.valor),
+          data: `${yearMonthPrefix}-01`,
+          categoria: r.categoria,
+          dono: r.dono,
+          forma: 'Recorrente',
+          parcela: 'Fixo',
+          dividir: false,
+          anotacoes: 'Gasto automático mensal',
+          isRecorrente: true
+        }));
+
+      return [...directGastos, ...virtualRecs];
+    }
+
+    // Navigation & Tabs
+    function setupTabs() {
+      const tabButtons = document.querySelectorAll('.tab-btn');
+      tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetTabId = btn.getAttribute('data-tab');
+          trocarAba(targetTabId);
+        });
+      });
+
+      document.getElementById('btnGoAddExpense').addEventListener('click', () => {
+        trocarAba('tab-gastos');
+        const formEl = document.getElementById('formGastoCard');
+        if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+
+    function trocarAba(tabId) {
+      state.activeTab = tabId;
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
+      });
+      document.querySelectorAll('.view-section').forEach(sec => {
+        sec.classList.toggle('active', sec.id === tabId);
+      });
+    }
+
+    // Month Navigation
+    function setupPeriodControls() {
+      document.getElementById('btnPrevMonth').addEventListener('click', () => mudarMes(-1));
+      document.getElementById('btnNextMonth').addEventListener('click', () => mudarMes(1));
+      updatePeriodLabel();
+    }
+
+    function mudarMes(delta) {
+      let { year, month } = state.period;
+      month += delta;
+      if (month < 0) {
+        month = 11;
+        year -= 1;
+      } else if (month > 11) {
+        month = 0;
+        year += 1;
+      }
+      state.period = { year, month };
+      updatePeriodLabel();
+      renderAll();
+    }
+
+    function updatePeriodLabel() {
+      const label = document.getElementById('labelCurrentMonth');
+      label.textContent = `${MONTH_NAMES[state.period.month]} ${state.period.year}`;
+      const sub = document.getElementById('quadroSubtitulo');
+      if (sub) {
+        sub.textContent = `Divisão individual e compartilhada — ${MONTH_NAMES[state.period.month]} de ${state.period.year}`;
+      }
+    }
+
+    // Populate Select Options (People, Categories, Cards)
+    function populateDropdowns() {
+      const { pessoas, categorias, cartoes } = state.data;
+
+      // Dono selects
+      const donoSelects = [
+        document.getElementById('gastoDono'),
+        document.getElementById('ganhoPessoa'),
+        document.getElementById('recDono')
+      ];
+
+      donoSelects.forEach(select => {
+        if (!select) return;
+        const currentVal = select.value;
+        select.innerHTML = '';
+        pessoas.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p;
+          opt.textContent = p;
+          select.appendChild(opt);
+        });
+        if (currentVal && pessoas.includes(currentVal)) {
+          select.value = currentVal;
+        }
+      });
+
+      // Categories
+      const catSelects = [
+        document.getElementById('gastoCategoria'),
+        document.getElementById('recCategoria')
+      ];
+      catSelects.forEach(select => {
+        if (!select) return;
+        const current = select.value;
+        select.innerHTML = '';
+        categorias.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          select.appendChild(opt);
+        });
+        if (current && categorias.includes(current)) {
+          select.value = current;
+        }
+      });
+
+      // Cards
+      const formaSelect = document.getElementById('gastoForma');
+      if (formaSelect) {
+        const cur = formaSelect.value;
+        formaSelect.innerHTML = '';
+        cartoes.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          formaSelect.appendChild(opt);
+        });
+        if (cur && cartoes.includes(cur)) formaSelect.value = cur;
+      }
+    }
+
+    // ==========================================
+    // RENDER FUNCTIONS
+    // ==========================================
+
+    function renderDashboard() {
+      const { year, month } = state.period;
+      const yearMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+      // Expenses in month (including active recurring)
+      const gastosMes = getGastosDoPeriodo(year, month);
+      const totalGastos = gastosMes.reduce((acc, g) => acc + Number(g.valor), 0);
+      const countGastos = gastosMes.length;
+
+      // Incomes in month
+      const ganhosMes = state.data.entradas.filter(e => e.tipo === 'ganho' && e.data && e.data.startsWith(yearMonthPrefix));
+      const totalGanhos = ganhosMes.reduce((acc, e) => acc + Number(e.valor), 0);
+
+      // Total saved (all-time accumulated)
+      const totalGuardados = state.data.entradas
+        .filter(e => e.tipo === 'guardado')
+        .reduce((acc, e) => acc + Number(e.valor), 0);
+
+      // Balance
+      const saldo = totalGanhos - totalGastos;
+
+      // Update KPIs
+      document.getElementById('dashTotalGastos').textContent = formatBRL(totalGastos);
+      document.getElementById('dashCountGastos').textContent = `${countGastos} lançamento${countGastos === 1 ? '' : 's'}`;
+
+      document.getElementById('dashTotalGanhos').textContent = formatBRL(totalGanhos);
+      document.getElementById('dashCountGanhos').textContent = `${ganhosMes.length} entrada${ganhosMes.length === 1 ? '' : 's'}`;
+
+      document.getElementById('dashTotalGuardados').textContent = formatBRL(totalGuardados);
+
+      const elSaldo = document.getElementById('dashSaldoMes');
+      elSaldo.textContent = formatBRL(saldo);
+      elSaldo.style.color = saldo >= 0 ? '#10b981' : '#ef4444';
+
+      const elSaldoStatus = document.getElementById('dashSaldoStatus');
+      elSaldoStatus.textContent = saldo >= 0 ? 'Superávit no período' : 'Déficit no período';
+
+      // Charts: Category breakdown
+      const catTotals = {};
+      state.data.categorias.forEach(c => { catTotals[c] = 0; });
+      gastosMes.forEach(g => {
+        const cat = g.categoria || 'Outros';
+        catTotals[cat] = (catTotals[cat] || 0) + Number(g.valor);
+      });
+
+      const catChartEl = document.getElementById('chartCategoriaContainer');
+      catChartEl.innerHTML = '';
+      const sortedCats = Object.entries(catTotals).filter(([_, val]) => val > 0).sort((a, b) => b[1] - a[1]);
+
+      if (sortedCats.length === 0) {
+        catChartEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem 0;">Nenhum gasto registrado neste mês.</div>';
+      } else {
+        const maxCat = Math.max(...sortedCats.map(s => s[1]), 1);
+        sortedCats.forEach(([cat, val]) => {
+          const pct = Math.round((val / (totalGastos || 1)) * 100);
+          const barWidth = Math.max(4, Math.round((val / maxCat) * 100));
+          const row = document.createElement('div');
+          row.className = 'bar-row';
+          row.innerHTML = `
+            <div class="bar-label-line">
+              <span class="bar-name">${cat} (${pct}%)</span>
+              <span class="bar-val">${formatBRL(val)}</span>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill bar-fill-gold" style="width: ${barWidth}%;"></div>
+            </div>
+          `;
+          catChartEl.appendChild(row);
+        });
+      }
+
+      // Charts: Person breakdown (including splits)
+      const personTotals = {};
+      state.data.pessoas.forEach(p => { personTotals[p] = 0; });
+      const numPessoas = Math.max(state.data.pessoas.length, 1);
+
+      gastosMes.forEach(g => {
+        const val = Number(g.valor) || 0;
+        if (g.dividir) {
+          const parcela = val / numPessoas;
+          state.data.pessoas.forEach(p => {
+            personTotals[p] = (personTotals[p] || 0) + parcela;
+          });
+        } else {
+          const dono = g.dono || state.data.pessoas[0];
+          personTotals[dono] = (personTotals[dono] || 0) + val;
+        }
+      });
+
+      const personChartEl = document.getElementById('chartPessoaContainer');
+      personChartEl.innerHTML = '';
+      const sortedPersons = Object.entries(personTotals).sort((a, b) => b[1] - a[1]);
+      const maxPerson = Math.max(...sortedPersons.map(s => s[1]), 1);
+
+      if (totalGastos === 0) {
+        personChartEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem 0;">Sem gastos calculados para as pessoas.</div>';
+      } else {
+        sortedPersons.forEach(([pessoa, val]) => {
+          const pct = Math.round((val / (totalGastos || 1)) * 100);
+          const barWidth = Math.max(4, Math.round((val / maxPerson) * 100));
+          const row = document.createElement('div');
+          row.className = 'bar-row';
+          row.innerHTML = `
+            <div class="bar-label-line">
+              <span class="bar-name">${pessoa} (${pct}%)</span>
+              <span class="bar-val" style="color: #c084fc;">${formatBRL(val)}</span>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill bar-fill-purple" style="width: ${barWidth}%;"></div>
+            </div>
+          `;
+          personChartEl.appendChild(row);
+        });
+      }
+
+      // Comparative with previous month
+      renderComparative(totalGastos);
+    }
+
+    function renderComparative(currentTotalGastos) {
+      let prevMonth = state.period.month - 1;
+      let prevYear = state.period.year;
+      if (prevMonth < 0) {
+        prevMonth = 11;
+        prevYear -= 1;
+      }
+
+      const prevGastos = getGastosDoPeriodo(prevYear, prevMonth);
+      const prevTotal = prevGastos.reduce((acc, g) => acc + Number(g.valor), 0);
+      const diff = currentTotalGastos - prevTotal;
+
+      let pctChange = 0;
+      if (prevTotal > 0) {
+        pctChange = ((diff / prevTotal) * 100).toFixed(1);
+      } else if (currentTotalGastos > 0) {
+        pctChange = 100;
+      }
+
+      const isIncrease = diff > 0;
+      const isDecrease = diff < 0;
+      const arrow = isIncrease ? '↑' : (isDecrease ? '↓' : '→');
+      const arrowColor = isIncrease ? '#ef4444' : (isDecrease ? '#10b981' : '#9ca3af');
+
+      const container = document.getElementById('compMesAnteriorStats');
+      const desc = document.getElementById('compMesAnteriorDesc');
+      desc.textContent = `Em comparação com ${MONTH_NAMES[prevMonth]} de ${prevYear} (${formatBRL(prevTotal)}):`;
+
+      container.innerHTML = `
+        <div style="display: flex; align-items: baseline; gap: 0.5rem;">
+          <span style="font-size: 2.2rem; font-weight: 800; color: ${arrowColor};">${arrow} ${Math.abs(pctChange)}%</span>
+          <span style="font-size: 0.95rem; color: var(--text-muted);">em relação ao mês anterior</span>
+        </div>
+        <div style="font-size: 1.1rem; font-weight: 700; color: #fff;">
+          Diferença de <span style="color: ${arrowColor};">${diff > 0 ? '+' : ''}${formatBRL(diff)}</span>
+        </div>
+      `;
+    }
+
+    // ==========================================
+    // TAB: GASTOS
+    // ==========================================
+
+    function renderGastos() {
+      const { year, month } = state.period;
+      const yearMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const tbody = document.getElementById('tabelaGastosBody');
+      tbody.innerHTML = '';
+
+      // Gastos cadastrados
+      const gastosDiretos = state.data.gastos.filter(g => g.data && g.data.startsWith(yearMonthPrefix));
+
+      // Recorrentes ativos (apenas informativos na tabela ou indicados)
+      const recAtivos = state.data.recorrentes
+        .filter(r => isRecorrenteActive(r, year, month))
+        .map(r => ({
+          id: `rec-virtual-${r.id}`,
+          recId: r.id,
+          descricao: r.descricao,
+          valor: Number(r.valor),
+          data: `${yearMonthPrefix}-01`,
+          categoria: r.categoria,
+          dono: r.dono,
+          forma: 'Recorrente',
+          parcela: 'Fixo',
+          dividir: false,
+          isRecorrente: true
+        }));
+
+      const listaCompleta = [...gastosDiretos, ...recAtivos].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+
+      document.getElementById('gastoPeriodoCount').textContent = `${listaCompleta.length} registro(s)`;
+
+      if (listaCompleta.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              Nenhum gasto registrado para ${MONTH_NAMES[month]} de ${year}. Use o formulário acima para adicionar!
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      listaCompleta.forEach(g => {
+        const tr = document.createElement('tr');
+        const badgeRec = g.isRecorrente ? '<span class="tag-badge tag-purple" style="margin-left: 0.35rem;">🔄 Recorrente</span>' : '';
+        const badgeDiv = g.dividir ? '<span class="tag-badge tag-gold" style="margin-left: 0.35rem;">🤝 Dividido</span>' : '';
+
+        tr.innerHTML = `
+          <td>${formatDateBR(g.data)}</td>
+          <td><strong>${escapeHtml(g.descricao)}</strong> ${badgeRec} ${badgeDiv}</td>
+          <td><span class="tag-badge">${escapeHtml(g.categoria)}</span></td>
+          <td>${escapeHtml(g.dono)}</td>
+          <td>${escapeHtml(g.forma || '-')}</td>
+          <td>${escapeHtml(g.parcela || '1/1')}</td>
+          <td style="font-weight: 700; color: #ef4444;">${formatBRL(g.valor)}</td>
+          <td style="text-align: right;">
+            ${g.isRecorrente ? `
+              <button class="btn-action btn-outline btn-sm" onclick="irParaRecorrentes('${g.recId}')" title="Gerenciar em Recorrentes">⚙️ Fixo</button>
+            ` : `
+              <button class="btn-action btn-outline btn-sm" onclick="iniciarEdicaoGasto('${g.id}')" title="Editar gasto">✏️</button>
+              <button class="btn-action btn-danger-outline btn-sm" onclick="excluirGasto('${g.id}')" title="Excluir gasto">🗑️</button>
+            `}
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function setupGastosForm() {
+      const form = document.getElementById('formGasto');
+      const btnCancel = document.getElementById('btnCancelarEdicaoGasto');
+      const inputData = document.getElementById('gastoData');
+
+      if (!inputData.value) inputData.value = getTodayISO();
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const editId = document.getElementById('gastoEditId').value;
+        const descricao = document.getElementById('gastoDescricao').value.trim();
+        const valor = parseFloat(document.getElementById('gastoValor').value);
+        const data = document.getElementById('gastoData').value;
+        const categoria = document.getElementById('gastoCategoria').value;
+        const dono = document.getElementById('gastoDono').value;
+        const forma = document.getElementById('gastoForma').value;
+        const parcela = document.getElementById('gastoParcela').value.trim() || '1/1';
+        const dividir = document.getElementById('gastoDividir').checked;
+        const anotacoes = document.getElementById('gastoAnotacoes').value.trim();
+
+        if (!descricao || isNaN(valor) || valor <= 0 || !data) {
+          alert('Por favor, preencha os campos obrigatórios corretamente.');
+          return;
+        }
+
+        if (editId) {
+          // Update existing
+          const idx = state.data.gastos.findIndex(g => g.id === editId);
+          if (idx !== -1) {
+            state.data.gastos[idx] = {
+              ...state.data.gastos[idx],
+              descricao, valor, data, categoria, dono, forma, parcela, dividir, anotacoes
+            };
+          }
+        } else {
+          // Add new
+          const novoGasto = {
+            id: 'g-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+            descricao, valor, data, categoria, dono, forma, parcela, dividir, anotacoes
+          };
+          state.data.gastos.unshift(novoGasto);
+        }
+
+        salvarDados();
+        resetFormGasto();
+        renderAll();
+      });
+
+      btnCancel.addEventListener('click', resetFormGasto);
+    }
+
+    function resetFormGasto() {
+      document.getElementById('gastoEditId').value = '';
+      document.getElementById('gastoDescricao').value = '';
+      document.getElementById('gastoValor').value = '';
+      document.getElementById('gastoData').value = getTodayISO();
+      document.getElementById('gastoParcela').value = '1/1';
+      document.getElementById('gastoDividir').checked = false;
+      document.getElementById('gastoAnotacoes').value = '';
+      document.getElementById('formGastoTitulo').textContent = '💸 Adicionar Novo Gasto';
+      document.getElementById('btnSalvarGasto').textContent = '💾 Salvar Gasto';
+      document.getElementById('btnCancelarEdicaoGasto').style.display = 'none';
+    }
+
+    function iniciarEdicaoGasto(id) {
+      const gasto = state.data.gastos.find(g => g.id === id);
+      if (!gasto) return;
+
+      trocarAba('tab-gastos');
+      document.getElementById('gastoEditId').value = gasto.id;
+      document.getElementById('gastoDescricao').value = gasto.descricao;
+      document.getElementById('gastoValor').value = gasto.valor;
+      document.getElementById('gastoData').value = gasto.data;
+      document.getElementById('gastoCategoria').value = gasto.categoria;
+      document.getElementById('gastoDono').value = gasto.dono;
+      document.getElementById('gastoForma').value = gasto.forma || 'Pix';
+      document.getElementById('gastoParcela').value = gasto.parcela || '1/1';
+      document.getElementById('gastoDividir').checked = !!gasto.dividir;
+      document.getElementById('gastoAnotacoes').value = gasto.anotacoes || '';
+
+      document.getElementById('formGastoTitulo').textContent = '✏️ Editar Gasto';
+      document.getElementById('btnSalvarGasto').textContent = '💾 Atualizar Gasto';
+      document.getElementById('btnCancelarEdicaoGasto').style.display = 'inline-flex';
+
+      const card = document.getElementById('formGastoCard');
+      card.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function excluirGasto(id) {
+      if (confirm('Tem certeza que deseja excluir este gasto?')) {
+        state.data.gastos = state.data.gastos.filter(g => g.id !== id);
+        salvarDados();
+        renderAll();
+      }
+    }
+
+    function irParaRecorrentes(recId) {
+      trocarAba('tab-recorrentes');
+      if (recId) iniciarEdicaoRecorrente(recId);
+    }
+
+    // ==========================================
+    // TAB: GANHOS & GUARDADOS
+    // ==========================================
+
+    function renderEntradas() {
+      const { year, month } = state.period;
+      const yearMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const tbody = document.getElementById('tabelaGanhosBody');
+      tbody.innerHTML = '';
+
+      const entradasPeriodo = state.data.entradas.filter(e => e.data && e.data.startsWith(yearMonthPrefix))
+        .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+
+      if (entradasPeriodo.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              Nenhum ganho ou valor guardado registrado em ${MONTH_NAMES[month]} de ${year}.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      entradasPeriodo.forEach(e => {
+        const isGanho = e.tipo === 'ganho';
+        const tag = isGanho 
+          ? '<span class="tag-badge tag-green">💰 Ganho</span>' 
+          : '<span class="tag-badge tag-purple">🏦 Guardado</span>';
+        const colorVal = isGanho ? '#10b981' : '#c084fc';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${tag}</td>
+          <td>${formatDateBR(e.data)}</td>
+          <td><strong>${escapeHtml(e.descricao)}</strong></td>
+          <td>${escapeHtml(e.pessoa)}</td>
+          <td style="font-weight: 700; color: ${colorVal};">${formatBRL(e.valor)}</td>
+          <td style="text-align: right;">
+            <button class="btn-action btn-outline btn-sm" onclick="iniciarEdicaoGanho('${e.id}')">✏️</button>
+            <button class="btn-action btn-danger-outline btn-sm" onclick="excluirGanho('${e.id}')">🗑️</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function setupGanhosForm() {
+      const form = document.getElementById('formGanho');
+      const btnCancel = document.getElementById('btnCancelarEdicaoGanho');
+      const inputData = document.getElementById('ganhoData');
+      if (!inputData.value) inputData.value = getTodayISO();
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const editId = document.getElementById('ganhoEditId').value;
+        const tipo = document.getElementById('ganhoTipo').value;
+        const descricao = document.getElementById('ganhoDescricao').value.trim();
+        const valor = parseFloat(document.getElementById('ganhoValor').value);
+        const data = document.getElementById('ganhoData').value;
+        const pessoa = document.getElementById('ganhoPessoa').value;
+
+        if (!descricao || isNaN(valor) || valor <= 0 || !data) {
+          alert('Preencha os campos obrigatórios corretamente.');
+          return;
+        }
+
+        if (editId) {
+          const idx = state.data.entradas.findIndex(item => item.id === editId);
+          if (idx !== -1) {
+            state.data.entradas[idx] = { ...state.data.entradas[idx], tipo, descricao, valor, data, pessoa };
+          }
+        } else {
+          state.data.entradas.unshift({
+            id: 'e-' + Date.now(),
+            tipo, descricao, valor, data, pessoa
+          });
+        }
+
+        salvarDados();
+        resetFormGanho();
+        renderAll();
+      });
+
+      btnCancel.addEventListener('click', resetFormGanho);
+    }
+
+    function resetFormGanho() {
+      document.getElementById('ganhoEditId').value = '';
+      document.getElementById('ganhoDescricao').value = '';
+      document.getElementById('ganhoValor').value = '';
+      document.getElementById('ganhoData').value = getTodayISO();
+      document.getElementById('formGanhoTitulo').textContent = '🏦 Novo Registro de Ganho ou Valor Guardado';
+      document.getElementById('btnCancelarEdicaoGanho').style.display = 'none';
+    }
+
+    function iniciarEdicaoGanho(id) {
+      const item = state.data.entradas.find(e => e.id === id);
+      if (!item) return;
+
+      document.getElementById('ganhoEditId').value = item.id;
+      document.getElementById('ganhoTipo').value = item.tipo;
+      document.getElementById('ganhoDescricao').value = item.descricao;
+      document.getElementById('ganhoValor').value = item.valor;
+      document.getElementById('ganhoData').value = item.data;
+      document.getElementById('ganhoPessoa').value = item.pessoa;
+      document.getElementById('formGanhoTitulo').textContent = '✏️ Editar Registro';
+      document.getElementById('btnCancelarEdicaoGanho').style.display = 'inline-flex';
+    }
+
+    function excluirGanho(id) {
+      if (confirm('Tem certeza que deseja excluir este registro?')) {
+        state.data.entradas = state.data.entradas.filter(e => e.id !== id);
+        salvarDados();
+        renderAll();
+      }
+    }
+
+    // ==========================================
+    // TAB: QUEM ME DEVE
+    // ==========================================
+
+    function renderDividas() {
+      const tbody = document.getElementById('tabelaDividasBody');
+      tbody.innerHTML = '';
+
+      let totalPendente = 0;
+      let countPendente = 0;
+      let totalPago = 0;
+      let countPago = 0;
+
+      state.data.dividas.forEach(d => {
+        if (d.pago) {
+          totalPago += Number(d.valor);
+          countPago += 1;
+        } else {
+          totalPendente += Number(d.valor);
+          countPendente += 1;
+        }
+      });
+
+      document.getElementById('dividasPendenteTotal').textContent = formatBRL(totalPendente);
+      document.getElementById('dividasPendenteCount').textContent = `${countPendente} acordo(s) pendente(s)`;
+      document.getElementById('dividasPagoTotal').textContent = formatBRL(totalPago);
+      document.getElementById('dividasPagoCount').textContent = `${countPago} acordo(s) quitado(s)`;
+
+      if (state.data.dividas.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              Nenhum acordo ou empréstimo registrado. Use o formulário acima!
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      state.data.dividas.forEach(d => {
+        const tr = document.createElement('tr');
+        const badgeStatus = d.pago 
+          ? '<span class="tag-badge tag-green" style="cursor: pointer;">✅ Pago</span>' 
+          : '<span class="tag-badge tag-red" style="cursor: pointer;">⏳ Pendente</span>';
+
+        tr.innerHTML = `
+          <td><strong>${escapeHtml(d.quem)}</strong></td>
+          <td>${escapeHtml(d.motivo)}</td>
+          <td>${formatDateBR(d.data)}</td>
+          <td onclick="alternarStatusDivida('${d.id}')" title="Clique para alternar status">${badgeStatus}</td>
+          <td style="font-weight: 700; color: ${d.pago ? '#10b981' : '#f59e0b'};">${formatBRL(d.valor)}</td>
+          <td style="text-align: right;">
+            <button class="btn-action btn-outline btn-sm" onclick="iniciarEdicaoDivida('${d.id}')">✏️</button>
+            <button class="btn-action btn-danger-outline btn-sm" onclick="excluirDivida('${d.id}')">🗑️</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function setupDividasForm() {
+      const form = document.getElementById('formDivida');
+      const btnCancel = document.getElementById('btnCancelarEdicaoDivida');
+      const inputData = document.getElementById('dividaData');
+      if (!inputData.value) inputData.value = getTodayISO();
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const editId = document.getElementById('dividaEditId').value;
+        const quem = document.getElementById('dividaQuem').value.trim();
+        const motivo = document.getElementById('dividaMotivo').value.trim();
+        const valor = parseFloat(document.getElementById('dividaValor').value);
+        const data = document.getElementById('dividaData').value;
+
+        if (!quem || !motivo || isNaN(valor) || valor <= 0 || !data) {
+          alert('Preencha os campos obrigatórios corretamente.');
+          return;
+        }
+
+        if (editId) {
+          const idx = state.data.dividas.findIndex(d => d.id === editId);
+          if (idx !== -1) {
+            state.data.dividas[idx] = { ...state.data.dividas[idx], quem, motivo, valor, data };
+          }
+        } else {
+          state.data.dividas.unshift({
+            id: 'd-' + Date.now(),
+            quem, motivo, valor, data, pago: false
+          });
+        }
+
+        salvarDados();
+        resetFormDivida();
+        renderAll();
+      });
+
+      btnCancel.addEventListener('click', resetFormDivida);
+    }
+
+    function resetFormDivida() {
+      document.getElementById('dividaEditId').value = '';
+      document.getElementById('dividaQuem').value = '';
+      document.getElementById('dividaMotivo').value = '';
+      document.getElementById('dividaValor').value = '';
+      document.getElementById('dividaData').value = getTodayISO();
+      document.getElementById('formDividaTitulo').textContent = '🤝 Novo Empréstimo / Valor a Receber';
+      document.getElementById('btnCancelarEdicaoDivida').style.display = 'none';
+    }
+
+    function alternarStatusDivida(id) {
+      const divida = state.data.dividas.find(d => d.id === id);
+      if (divida) {
+        divida.pago = !divida.pago;
+        salvarDados();
+        renderDividas();
+      }
+    }
+
+    function iniciarEdicaoDivida(id) {
+      const item = state.data.dividas.find(d => d.id === id);
+      if (!item) return;
+
+      document.getElementById('dividaEditId').value = item.id;
+      document.getElementById('dividaQuem').value = item.quem;
+      document.getElementById('dividaMotivo').value = item.motivo;
+      document.getElementById('dividaValor').value = item.valor;
+      document.getElementById('dividaData').value = item.data;
+      document.getElementById('formDividaTitulo').textContent = '✏️ Editar Acordo';
+      document.getElementById('btnCancelarEdicaoDivida').style.display = 'inline-flex';
+    }
+
+    function excluirDivida(id) {
+      if (confirm('Tem certeza que deseja remover esta cobrança?')) {
+        state.data.dividas = state.data.dividas.filter(d => d.id !== id);
+        salvarDados();
+        renderDividas();
+      }
+    }
+
+    // ==========================================
+    // TAB: RECORRENTES
+    // ==========================================
+
+    function renderRecorrentes() {
+      const tbody = document.getElementById('tabelaRecorrentesBody');
+      tbody.innerHTML = '';
+      const { year, month } = state.period;
+
+      if (state.data.recorrentes.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              Nenhum gasto recorrente cadastrado. Adicione assinaturas, mensalidades ou contas fixas!
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      state.data.recorrentes.forEach(r => {
+        const ativoNesteMes = isRecorrenteActive(r, year, month);
+        const tagStatus = ativoNesteMes 
+          ? '<span class="tag-badge tag-green">Ativo no Mês</span>' 
+          : '<span class="tag-badge">Fora de Vigência</span>';
+
+        const vigenciaStr = `${r.mesInicio} até ${r.mesFim ? r.mesFim : 'indeterminado'}`;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${escapeHtml(r.descricao)}</strong></td>
+          <td style="font-weight: 700; color: #ef4444;">${formatBRL(r.valor)}</td>
+          <td><span class="tag-badge">${escapeHtml(r.categoria)}</span></td>
+          <td>${escapeHtml(r.dono)}</td>
+          <td style="font-size: 0.8rem; color: var(--text-muted);">${vigenciaStr}</td>
+          <td>${tagStatus}</td>
+          <td style="text-align: right;">
+            <button class="btn-action btn-outline btn-sm" onclick="iniciarEdicaoRecorrente('${r.id}')">✏️</button>
+            <button class="btn-action btn-danger-outline btn-sm" onclick="excluirRecorrente('${r.id}')">🗑️</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function setupRecorrentesForm() {
+      const form = document.getElementById('formRecorrente');
+      const btnCancel = document.getElementById('btnCancelarEdicaoRec');
+      const inputMesInicio = document.getElementById('recMesInicio');
+      if (!inputMesInicio.value) inputMesInicio.value = getCurrentMonthISO();
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const editId = document.getElementById('recorrenteEditId').value;
+        const descricao = document.getElementById('recDescricao').value.trim();
+        const valor = parseFloat(document.getElementById('recValor').value);
+        const categoria = document.getElementById('recCategoria').value;
+        const dono = document.getElementById('recDono').value;
+        const mesInicio = document.getElementById('recMesInicio').value;
+        const mesFim = document.getElementById('recMesFim').value;
+
+        if (!descricao || isNaN(valor) || valor <= 0 || !mesInicio) {
+          alert('Preencha os campos obrigatórios corretamente.');
+          return;
+        }
+
+        if (editId) {
+          const idx = state.data.recorrentes.findIndex(r => r.id === editId);
+          if (idx !== -1) {
+            state.data.recorrentes[idx] = { ...state.data.recorrentes[idx], descricao, valor, categoria, dono, mesInicio, mesFim };
+          }
+        } else {
+          state.data.recorrentes.push({
+            id: 'r-' + Date.now(),
+            descricao, valor, categoria, dono, mesInicio, mesFim
+          });
+        }
+
+        salvarDados();
+        resetFormRecorrente();
+        renderAll();
+      });
+
+      btnCancel.addEventListener('click', resetFormRecorrente);
+    }
+
+    function resetFormRecorrente() {
+      document.getElementById('recorrenteEditId').value = '';
+      document.getElementById('recDescricao').value = '';
+      document.getElementById('recValor').value = '';
+      document.getElementById('recMesInicio').value = getCurrentMonthISO();
+      document.getElementById('recMesFim').value = '';
+      document.getElementById('formRecorrenteTitulo').textContent = '🔄 Adicionar Gasto Recorrente (Fixo Mensal)';
+      document.getElementById('btnCancelarEdicaoRec').style.display = 'none';
+    }
+
+    function iniciarEdicaoRecorrente(id) {
+      const r = state.data.recorrentes.find(item => item.id === id);
+      if (!r) return;
+
+      trocarAba('tab-recorrentes');
+      document.getElementById('recorrenteEditId').value = r.id;
+      document.getElementById('recDescricao').value = r.descricao;
+      document.getElementById('recValor').value = r.valor;
+      document.getElementById('recCategoria').value = r.categoria;
+      document.getElementById('recDono').value = r.dono;
+      document.getElementById('recMesInicio').value = r.mesInicio;
+      document.getElementById('recMesFim').value = r.mesFim || '';
+      document.getElementById('formRecorrenteTitulo').textContent = '✏️ Editar Recorrência';
+      document.getElementById('btnCancelarEdicaoRec').style.display = 'inline-flex';
+    }
+
+    function excluirRecorrente(id) {
+      if (confirm('Tem certeza que deseja remover este gasto recorrente?')) {
+        state.data.recorrentes = state.data.recorrentes.filter(r => r.id !== id);
+        salvarDados();
+        renderAll();
+      }
+    }
+
+    // ==========================================
+    // TAB: QUADRO (POST-ITS POR PESSOA)
+    // ==========================================
+
+    function renderQuadro() {
+      const { year, month } = state.period;
+      const gastosMes = getGastosDoPeriodo(year, month);
+      const container = document.getElementById('quadroColumnsContainer');
+      container.innerHTML = '';
+
+      const numPessoas = Math.max(state.data.pessoas.length, 1);
+
+      // Agrupa gastos por pessoa
+      // Cada pessoa tem: gastos individuais onde é dono + sua cota-parte dos divididos
+      state.data.pessoas.forEach(pessoa => {
+        let totalPessoa = 0;
+        const itensPessoa = [];
+
+        gastosMes.forEach(g => {
+          const valTotal = Number(g.valor) || 0;
+          if (g.dividir) {
+            const parte = valTotal / numPessoas;
+            totalPessoa += parte;
+            itensPessoa.push({
+              descricao: g.descricao,
+              categoria: g.categoria,
+              data: g.data,
+              forma: g.forma,
+              parcela: g.parcela,
+              valorOriginal: valTotal,
+              valorParte: parte,
+              isDividido: true,
+              donoOriginal: g.dono,
+              isRecorrente: !!g.isRecorrente
+            });
+          } else if (g.dono === pessoa) {
+            totalPessoa += valTotal;
+            itensPessoa.push({
+              descricao: g.descricao,
+              categoria: g.categoria,
+              data: g.data,
+              forma: g.forma,
+              parcela: g.parcela,
+              valorOriginal: valTotal,
+              valorParte: valTotal,
+              isDividido: false,
+              isRecorrente: !!g.isRecorrente
+            });
+          }
+        });
+
+        // Monta o Post-it Card
+        const postit = document.createElement('div');
+        postit.className = 'postit-card';
+        postit.setAttribute('data-person', pessoa);
+
+        let itemsHtml = '';
+        if (itensPessoa.length === 0) {
+          itemsHtml = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 1.5rem 0;">Sem gastos atribuídos neste mês.</div>';
+        } else {
+          itensPessoa.forEach(item => {
+            const tagDiv = item.isDividido ? `<span class="tag-badge tag-gold">Parte de ${formatBRL(item.valorOriginal)} (pago por ${escapeHtml(item.donoOriginal)})</span>` : '';
+            const tagRec = item.isRecorrente ? '<span class="tag-badge tag-purple">🔄 Fixo</span>' : '';
+            itemsHtml += `
+              <div class="postit-item">
+                <div class="postit-item-head">
+                  <span>${escapeHtml(item.descricao)}</span>
+                  <span style="color: #ef4444;">${formatBRL(item.valorParte)}</span>
+                </div>
+                <div class="postit-item-meta">
+                  <span>📅 ${formatDateBR(item.data)}</span>
+                  <span>🏷️ ${escapeHtml(item.categoria)}</span>
+                  <span>💳 ${escapeHtml(item.forma || '-')} (${escapeHtml(item.parcela || '1/1')})</span>
+                  ${tagDiv}
+                  ${tagRec}
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        postit.innerHTML = `
+          <div class="postit-header">
+            <div>
+              <div class="postit-person">👤 ${escapeHtml(pessoa)}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">${itensPessoa.length} item(ns) neste mês</div>
+            </div>
+            <div class="postit-total">${formatBRL(totalPessoa)}</div>
+          </div>
+          <div class="postit-list">
+            ${itemsHtml}
+          </div>
+          <div style="margin-top: auto; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.06); text-align: right;">
+            <button class="btn-action btn-outline btn-sm" onclick="exportarPostit('${escapeHtml(pessoa)}')">
+              📸 Salvar como Imagem
+            </button>
+          </div>
+        `;
+
+        container.appendChild(postit);
+      });
+    }
+
+    // ==========================================
+    // EXPORTAÇÃO DE IMAGEM SEM CORTES (CRÍTICO)
+    // ==========================================
+
+    function exportarPostit(pessoaNome) {
+      if (typeof html2canvas === 'undefined') {
+        alert('A biblioteca de imagem html2canvas não pôde ser carregada.');
+        return;
+      }
+
+      const cardOriginal = document.querySelector(`.postit-card[data-person="${pessoaNome}"]`);
+      if (!cardOriginal) return;
+
+      const cloneArea = document.getElementById('exportCloneArea');
+      cloneArea.innerHTML = '';
+      cloneArea.style.width = '420px';
+
+      // Cria clone desacoplado sem limitação de altura
+      const headerTitle = document.createElement('div');
+      headerTitle.style.marginBottom = '15px';
+      headerTitle.innerHTML = `
+        <h2 style="margin: 0; color: #d4af37; font-size: 1.3rem;">FinControle Premium</h2>
+        <div style="color: #9ca3af; font-size: 0.85rem;">Quadro de Gastos — ${MONTH_NAMES[state.period.month]} ${state.period.year}</div>
+      `;
+      cloneArea.appendChild(headerTitle);
+
+      const clone = cardOriginal.cloneNode(true);
+      // Remove botões internos do clone
+      const btns = clone.querySelectorAll('button');
+      btns.forEach(b => b.remove());
+
+      // Destrava altura e scrolls do clone
+      const listEl = clone.querySelector('.postit-list');
+      if (listEl) {
+        listEl.style.maxHeight = 'none';
+        listEl.style.overflow = 'visible';
+      }
+      clone.style.height = 'auto';
+      clone.style.maxHeight = 'none';
+      clone.style.overflow = 'visible';
+
+      cloneArea.appendChild(clone);
+
+      setTimeout(() => {
+        html2canvas(cloneArea, {
+          backgroundColor: '#0f0f15',
+          scale: 2,
+          useCORS: true,
+          scrollX: 0,
+          scrollY: 0,
+          width: cloneArea.scrollWidth,
+          height: cloneArea.scrollHeight
+        }).then(canvas => {
+          const a = document.createElement('a');
+          a.href = canvas.toDataURL('image/png');
+          a.download = `quadro-${pessoaNome.toLowerCase().replace(/\s+/g, '-')}-${MONTH_NAMES[state.period.month]}-${state.period.year}.png`;
+          a.click();
+          cloneArea.innerHTML = '';
+        }).catch(err => {
+          console.error(err);
+          alert('Não foi possível gerar a imagem.');
+          cloneArea.innerHTML = '';
+        });
+      }, 100);
+    }
+
+    function exportarPanoramaCompleto() {
+      if (typeof html2canvas === 'undefined') {
+        alert('A biblioteca de imagem html2canvas não pôde ser carregada.');
+        return;
+      }
+
+      const { year, month } = state.period;
+      const gastosMes = getGastosDoPeriodo(year, month);
+      const totalGeral = gastosMes.reduce((acc, g) => acc + Number(g.valor), 0);
+      const numPessoas = Math.max(state.data.pessoas.length, 1);
+
+      const cloneArea = document.getElementById('exportCloneArea');
+      cloneArea.innerHTML = '';
+      // Fixed width with clean multi-column flex layout
+      cloneArea.style.width = '1200px';
+
+      // Header do panorama
+      const panoramaHeader = document.createElement('div');
+      panoramaHeader.style.cssText = `
+        background: linear-gradient(135deg, #181826 0%, #111118 100%);
+        border: 1px solid rgba(212, 175, 55, 0.4);
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      `;
+      panoramaHeader.innerHTML = `
+        <div>
+          <h1 style="margin: 0; font-size: 1.8rem; color: #fff; display: flex; align-items: center; gap: 8px;">
+            <span>💎 FinControle Premium</span>
+            <span style="color: #d4af37; font-size: 1.2rem;">Panorama de Gastos</span>
+          </h1>
+          <p style="margin: 6px 0 0 0; color: #9ca3af; font-size: 1rem;">
+            Período: <strong>${MONTH_NAMES[month]} de ${year}</strong> (${state.data.pessoas.join(', ')})
+          </p>
+        </div>
+        <div style="text-align: right; background: rgba(0,0,0,0.4); padding: 12px 20px; border-radius: 10px; border: 1px solid rgba(212,175,55,0.3);">
+          <div style="font-size: 0.85rem; color: #d4af37; text-transform: uppercase; font-weight: 700;">TOTAL GERAL DOS GASTOS</div>
+          <div style="font-size: 2rem; font-weight: 800; color: #ffffff;">${formatBRL(totalGeral)}</div>
+        </div>
+      `;
+      cloneArea.appendChild(panoramaHeader);
+
+      // Colunas verticais lado a lado para cada pessoa
+      const colsContainer = document.createElement('div');
+      colsContainer.style.cssText = `
+        display: grid;
+        grid-template-columns: repeat(${state.data.pessoas.length}, 1fr);
+        gap: 20px;
+        align-items: start;
+      `;
+
+      state.data.pessoas.forEach(pessoa => {
+        let totalPessoa = 0;
+        const itensPessoa = [];
+
+        gastosMes.forEach(g => {
+          const valTotal = Number(g.valor) || 0;
+          if (g.dividir) {
+            const parte = valTotal / numPessoas;
+            totalPessoa += parte;
+            itensPessoa.push({
+              descricao: g.descricao,
+              categoria: g.categoria,
+              data: g.data,
+              forma: g.forma,
+              parcela: g.parcela,
+              valorOriginal: valTotal,
+              valorParte: parte,
+              isDividido: true,
+              donoOriginal: g.dono,
+              isRecorrente: !!g.isRecorrente
+            });
+          } else if (g.dono === pessoa) {
+            totalPessoa += valTotal;
+            itensPessoa.push({
+              descricao: g.descricao,
+              categoria: g.categoria,
+              data: g.data,
+              forma: g.forma,
+              parcela: g.parcela,
+              valorOriginal: valTotal,
+              valorParte: valTotal,
+              isDividido: false,
+              isRecorrente: !!g.isRecorrente
+            });
+          }
+        });
+
+        const colCard = document.createElement('div');
+        colCard.style.cssText = `
+          background: #181824;
+          border: 1px solid rgba(212, 175, 55, 0.4);
+          border-radius: 12px;
+          padding: 16px;
+        `;
+
+        let listHtml = '';
+        if (itensPessoa.length === 0) {
+          listHtml = '<div style="color: #9ca3af; padding: 20px 0; text-align: center; font-size: 0.9rem;">Sem gastos no período</div>';
+        } else {
+          itensPessoa.forEach(item => {
+            const tagDiv = item.isDividido ? `<span style="font-size: 0.7rem; background: rgba(212,175,55,0.15); color: #f3cf65; padding: 2px 6px; border-radius: 4px;">Rateio (pago por ${escapeHtml(item.donoOriginal)})</span>` : '';
+            const tagRec = item.isRecorrente ? '<span style="font-size: 0.7rem; background: rgba(168,85,247,0.15); color: #c084fc; padding: 2px 6px; border-radius: 4px;">Fixo</span>' : '';
+            listHtml += `
+              <div style="background: rgba(255,255,255,0.03); border: 1px solid #28283a; border-radius: 8px; padding: 10px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; font-weight: 700; color: #fff; font-size: 0.9rem;">
+                  <span>${escapeHtml(item.descricao)}</span>
+                  <span style="color: #ef4444;">${formatBRL(item.valorParte)}</span>
+                </div>
+                <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 6px;">
+                  <span>📅 ${formatDateBR(item.data)}</span>
+                  <span>🏷️ ${escapeHtml(item.categoria)}</span>
+                  <span>💳 ${escapeHtml(item.forma || '-')}</span>
+                  ${tagDiv}
+                  ${tagRec}
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        colCard.innerHTML = `
+          <div style="border-bottom: 2px solid rgba(212,175,55,0.3); padding-bottom: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline;">
+            <div>
+              <div style="font-size: 1.25rem; font-weight: 800; color: #fff;">👤 ${escapeHtml(pessoa)}</div>
+              <div style="font-size: 0.8rem; color: #9ca3af;">${itensPessoa.length} itens</div>
+            </div>
+            <div style="font-size: 1.35rem; font-weight: 800; color: #f3cf65;">${formatBRL(totalPessoa)}</div>
+          </div>
+          <div>${listHtml}</div>
+        `;
+
+        colsContainer.appendChild(colCard);
+      });
+
+      cloneArea.appendChild(colsContainer);
+
+      setTimeout(() => {
+        html2canvas(cloneArea, {
+          backgroundColor: '#0b0b10',
+          scale: 2,
+          useCORS: true,
+          width: cloneArea.scrollWidth,
+          height: cloneArea.scrollHeight
+        }).then(canvas => {
+          const a = document.createElement('a');
+          a.href = canvas.toDataURL('image/png');
+          a.download = `panorama-gastos-${MONTH_NAMES[month]}-${year}.png`;
+          a.click();
+          cloneArea.innerHTML = '';
+        }).catch(err => {
+          console.error(err);
+          alert('Falha ao exportar panorama completo.');
+          cloneArea.innerHTML = '';
+        });
+      }, 150);
+    }
+
+    // ==========================================
+    // MODAL PESSOAS
+    // ==========================================
+
+    function setupPeopleModal() {
+      const modal = document.getElementById('modalPessoas');
+      const btnOpen = document.getElementById('btnOpenPeopleModal');
+      const btnClose = document.getElementById('btnCloseModalPessoas');
+      const btnDone = document.getElementById('btnFecharModalPessoas');
+      const btnAdd = document.getElementById('btnAddPessoa');
+      const inputNome = document.getElementById('novoNomePessoa');
+
+      btnOpen.addEventListener('click', () => {
+        renderListaPessoasModal();
+        modal.classList.add('active');
+      });
+
+      const fechar = () => modal.classList.remove('active');
+      btnClose.addEventListener('click', fechar);
+      btnDone.addEventListener('click', fechar);
+
+      btnAdd.addEventListener('click', () => {
+        const nome = inputNome.value.trim();
+        if (!nome) return;
+        if (state.data.pessoas.includes(nome)) {
+          alert('Esta pessoa já está cadastrada!');
+          return;
+        }
+        state.data.pessoas.push(nome);
+        salvarDados();
+        inputNome.value = '';
+        renderListaPessoasModal();
+        populateDropdowns();
+        renderAll();
+      });
+    }
+
+    function renderListaPessoasModal() {
+      const lista = document.getElementById('listaPessoasModal');
+      lista.innerHTML = '';
+
+      state.data.pessoas.forEach((p, idx) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; background: #111118; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border);';
+        row.innerHTML = `
+          <span style="font-weight: 600; color: #fff;">👤 ${escapeHtml(p)}</span>
+          ${state.data.pessoas.length > 1 ? `
+            <button class="btn-action btn-danger-outline btn-sm" onclick="removerPessoa(${idx})">Remover</button>
+          ` : '<span style="font-size: 0.75rem; color: var(--text-muted);">Principal</span>'}
+        `;
+        lista.appendChild(row);
+      });
+    }
+
+    function removerPessoa(idx) {
+      if (state.data.pessoas.length <= 1) {
+        alert('É necessário ter ao menos uma pessoa cadastrada.');
+        return;
+      }
+      const nome = state.data.pessoas[idx];
+      if (confirm(`Remover "${nome}"? Gastos atribuídos a ela passarão para a primeira pessoa.`)) {
+        state.data.pessoas.splice(idx, 1);
+        const novoDonoPadrao = state.data.pessoas[0];
+        // Reatribui se pessoa foi excluída
+        state.data.gastos.forEach(g => { if (g.dono === nome) g.dono = novoDonoPadrao; });
+        state.data.entradas.forEach(e => { if (e.pessoa === nome) e.pessoa = novoDonoPadrao; });
+        state.data.recorrentes.forEach(r => { if (r.dono === nome) r.dono = novoDonoPadrao; });
+        salvarDados();
+        renderListaPessoasModal();
+        populateDropdowns();
+        renderAll();
+      }
+    }
+
+    // ==========================================
+    // UTILS & INITIALIZATION
+    // ==========================================
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function renderAll() {
+      populateDropdowns();
+      renderDashboard();
+      renderGastos();
+      renderEntradas();
+      renderDividas();
+      renderRecorrentes();
+      renderQuadro();
+    }
+
+    // Bootstrap
+    document.addEventListener('DOMContentLoaded', () => {
+      // Set current month on init via new Date()
+      const now = new Date();
+      state.period.year = now.getFullYear();
+      state.period.month = now.getMonth();
+
+      carregarDados();
+      setupTabs();
+      setupPeriodControls();
+      setupGastosForm();
+      setupGanhosForm();
+      setupDividasForm();
+      setupRecorrentesForm();
+      setupPeopleModal();
+
+      document.getElementById('btnClearAllData').addEventListener('click', limparTodosOsDados);
+      document.getElementById('btnExportFullQuadro').addEventListener('click', exportarPanoramaCompleto);
+
+      renderAll();
+    });
+  </script>
+</body>
+</html>
+=======
   <!-- Hidden clone area for html2canvas to guarantee no clipping -->
   <div id="exportCloneArea"></div>
 
+  <!-- Notification Toast -->
+  <div id="appToast" style="display: none; position: fixed; bottom: 20px; right: 20px; background: #1f2937; color: #f3f4f6; border: 1px solid rgba(212, 175, 55, 0.4); padding: 12px 18px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 9999; font-size: 0.85rem; max-width: 360px; line-height: 1.4;"></div>
 
+  <script>
+    // ==========================================
+    // FIREBASE / CLOUD CONFIGURATION & FALLBACK
+    // ==========================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyBrpFrJPXM2lSPqFqIHL6RxzvkAvZtD8Lc",
+      authDomain: "controle-de-gastos-c836e.firebaseapp.com",
+      projectId: "controle-de-gastos-c836e",
+      storageBucket: "controle-de-gastos-c836e.firebasestorage.app",
+      messagingSenderId: "804575674485",
+      appId: "1:804575674485:web:a8e0644a795a37988f383c"
+    };
+
+    let firestoreDb = null;
+    let isCloudConnected = false;
+
+    function initFirebaseSafe() {
+      try {
+        if (typeof firebase !== 'undefined' && firebase.apps) {
+          if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+          }
+          firestoreDb = firebase.firestore();
+          updateCloudStatus(true);
+        } else {
+          // Firebase script not in runtime (static offline mode); handle gracefully
+          updateCloudStatus(false);
+        }
+      } catch (err) {
+        console.warn('Firebase inicialização offline:', err);
+        firestoreDb = null;
+        updateCloudStatus(false);
+      }
+    }
+
+    function updateCloudStatus(online) {
+      isCloudConnected = !!online;
+      const badge = document.getElementById('cloudStatusBadge');
+      if (!badge) return;
+      if (online) {
+        badge.textContent = '☁️ Nuvem conectada';
+        badge.style.background = 'rgba(16, 185, 129, 0.15)';
+        badge.style.color = '#34d399';
+        badge.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+        badge.title = 'Sincronizado com Firebase Firestore';
+      } else {
+        badge.textContent = '📴 Offline — salvando localmente';
+        badge.style.background = 'rgba(234, 179, 8, 0.15)';
+        badge.style.color = '#fbbf24';
+        badge.style.borderColor = 'rgba(234, 179, 8, 0.3)';
+        badge.title = 'Operando localmente via localStorage';
+      }
+    }
+
+    function showNotice(msg) {
+      const toast = document.getElementById('appToast');
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      setTimeout(() => {
+        toast.style.display = 'none';
+      }, 4000);
+    }
+
+    // ==========================================
+    // STATE & CONFIGURATION
+    // ==========================================
+    const STORAGE_KEY = 'finControlePremium_v2';
+
+    const MONTH_NAMES = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+
+    const state = {
+      period: {
+        year: new Date().getFullYear(),
+        month: new Date().getMonth()
+      },
+      activeTab: 'tab-dashboard',
+      data: {
+        pessoas: ['Gabriel', 'Mariana'],
+        gastos: [],
+        entradas: [],
+        dividas: [],
+        recorrentes: [],
+        cartoes: ['Pix', 'Dinheiro', 'Débito', 'Crédito', 'Cartão Black', 'Cartão Nu', 'Cartão XP'],
+        categorias: ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Educação', 'Compras', 'Outros']
+      }
+    };
+
+    // ==========================================
+    // UTILITIES & FORMATTERS
+    // ==========================================
     function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function formatBRL(value) {
+      const v = Number(value) || 0;
+      return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function formatDateBR(isoString) {
+      if (!isoString) return '';
+      const parts = String(isoString).split('-');
+      if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+      return String(isoString);
+    }
+
+    function getTodayISO() {
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function getCurrentMonthISO() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    // ==========================================
+    // PERSISTENCE (LOCALSTORAGE + FIRESTORE SYNC)
+    // ==========================================
+    async function salvarDados() {
+      // 1. Salvar no localStorage (backup offline imediato)
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+      } catch (e) {
+        console.error('Erro ao salvar no localStorage', e);
+      }
+
+      // 2. Salvar no Firestore se disponível
+      if (firestoreDb && typeof firestoreDb.collection === 'function') {
+        try {
+          await firestoreDb.collection("app").doc("dados").set(state.data);
+          updateCloudStatus(true);
+        } catch (err) {
+          console.warn('Erro ao sincronizar com Firestore:', err);
+          updateCloudStatus(false);
+          showNotice("⚠️ Salvo localmente — sincroniza quando voltar a internet");
+        }
+      }
+    }
+
+    async function carregarDados() {
+      // 1. Carregar do localStorage primeiro para exibição instantânea
+      let carregouLocal = false;
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          state.data = {
+            pessoas: Array.isArray(parsed.pessoas) && parsed.pessoas.length ? parsed.pessoas : ['Você'],
+            gastos: Array.isArray(parsed.gastos) ? parsed.gastos : [],
+            entradas: Array.isArray(parsed.entradas) ? parsed.entradas : [],
+            dividas: Array.isArray(parsed.dividas) ? parsed.dividas : [],
+            recorrentes: Array.isArray(parsed.recorrentes) ? parsed.recorrentes : [],
+            cartoes: Array.isArray(parsed.cartoes) && parsed.cartoes.length ? parsed.cartoes : ['Pix', 'Dinheiro', 'Débito', 'Crédito', 'Cartão Black', 'Cartão Nu', 'Cartão XP'],
+            categorias: Array.isArray(parsed.categorias) && parsed.categorias.length ? parsed.categorias : ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Educação', 'Compras', 'Outros']
+          };
+          carregouLocal = true;
+        } else {
+          seedInitialData();
+        }
+      } catch (e) {
+        console.error('Erro ao carregar localStorage:', e);
+        seedInitialData();
+      }
+
+      // 2. Buscar da nuvem Firestore (nuvem vence como verdade)
+      if (firestoreDb && typeof firestoreDb.collection === 'function') {
+        try {
+          const docSnap = await firestoreDb.collection("app").doc("dados").get();
+          if (docSnap && docSnap.exists) {
+            const cloudData = docSnap.data();
+            if (cloudData && typeof cloudData === 'object') {
+              state.data = {
+                pessoas: Array.isArray(cloudData.pessoas) && cloudData.pessoas.length ? cloudData.pessoas : ['Você'],
+                gastos: Array.isArray(cloudData.gastos) ? cloudData.gastos : [],
+                entradas: Array.isArray(cloudData.entradas) ? cloudData.entradas : [],
+                dividas: Array.isArray(cloudData.dividas) ? cloudData.dividas : [],
+                recorrentes: Array.isArray(cloudData.recorrentes) ? cloudData.recorrentes : [],
+                cartoes: Array.isArray(cloudData.cartoes) && cloudData.cartoes.length ? cloudData.cartoes : ['Pix', 'Dinheiro', 'Débito', 'Crédito', 'Cartão Black', 'Cartão Nu', 'Cartão XP'],
+                categorias: Array.isArray(cloudData.categorias) && cloudData.categorias.length ? cloudData.categorias : ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Educação', 'Compras', 'Outros']
+              };
+              // Atualiza o localStorage com o dado da nuvem
+              try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+              } catch (_) {}
+              updateCloudStatus(true);
+              renderAll();
+            }
+          } else {
+            // Se o documento na nuvem ainda não existe, salva o inicial nele
+            await firestoreDb.collection("app").doc("dados").set(state.data);
+            updateCloudStatus(true);
+          }
+        } catch (err) {
+          console.warn('Firestore indisponível ao carregar:', err);
+          updateCloudStatus(false);
+        }
+      }
+    }
+
+    function seedInitialData() {
+      const currentYear = new Date().getFullYear();
+      const currentMonth = new Date().getMonth();
+      const mm = String(currentMonth + 1).padStart(2, '0');
+      const prevMonthIdx = currentMonth === 0 ? 11 : currentMonth - 1;
+      const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+      const prevMm = String(prevMonthIdx + 1).padStart(2, '0');
+
+      state.data = {
+        pessoas: ['Gabriel', 'Mariana'],
+        gastos: [
+          {
+            id: 'g-1',
+            descricao: 'Supermercado Mensal',
+            valor: 1420.50,
+            data: `${currentYear}-${mm}-05`,
+            categoria: 'Alimentação',
+            dono: 'Gabriel',
+            forma: 'Cartão Black',
+            parcela: '1/1',
+            dividir: true,
+            anotacoes: 'Compras da dispensa do mês'
+          },
+          {
+            id: 'g-2',
+            descricao: 'Jantar Comemoração',
+            valor: 340.00,
+            data: `${currentYear}-${mm}-12`,
+            categoria: 'Lazer',
+            dono: 'Mariana',
+            forma: 'Crédito',
+            parcela: '1/1',
+            dividir: true,
+            anotacoes: 'Restaurante italiano'
+          },
+          {
+            id: 'g-3',
+            descricao: 'Combustível Posto Ipiranga',
+            valor: 260.00,
+            data: `${currentYear}-${mm}-08`,
+            categoria: 'Transporte',
+            dono: 'Gabriel',
+            forma: 'Débito',
+            parcela: '1/1',
+            dividir: false,
+            anotacoes: ''
+          },
+          {
+            id: 'g-4',
+            descricao: 'Plano Odontológico',
+            valor: 150.00,
+            data: `${currentYear}-${mm}-15`,
+            categoria: 'Saúde',
+            dono: 'Mariana',
+            forma: 'Pix',
+            parcela: '1/1',
+            dividir: false,
+            anotacoes: ''
+          },
+          {
+            id: 'g-prev-1',
+            descricao: 'Supermercado Mês Passado',
+            valor: 1650.00,
+            data: `${prevYear}-${prevMm}-06`,
+            categoria: 'Alimentação',
+            dono: 'Gabriel',
+            forma: 'Cartão Black',
+            parcela: '1/1',
+            dividir: true,
+            anotacoes: ''
+          },
+          {
+            id: 'g-prev-2',
+            descricao: 'Manutenção Carro',
+            valor: 850.00,
+            data: `${prevYear}-${prevMm}-14`,
+            categoria: 'Transporte',
+            dono: 'Gabriel',
+            forma: 'Pix',
+            parcela: '1/1',
+            dividir: false,
+            anotacoes: ''
+          }
+        ],
+        entradas: [
+          {
+            id: 'e-1',
+            tipo: 'ganho',
+            descricao: 'Salário Gabriel',
+            valor: 7500.00,
+            data: `${currentYear}-${mm}-05`,
+            pessoa: 'Gabriel'
+          },
+          {
+            id: 'e-2',
+            tipo: 'ganho',
+            descricao: 'Salário Mariana',
+            valor: 6800.00,
+            data: `${currentYear}-${mm}-05`,
+            pessoa: 'Mariana'
+          },
+          {
+            id: 'e-3',
+            tipo: 'guardado',
+            descricao: 'Aporte Tesouro Selic',
+            valor: 2000.00,
+            data: `${currentYear}-${mm}-10`,
+            pessoa: 'Gabriel'
+          }
+        ],
+        dividas: [
+          {
+            id: 'd-1',
+            quem: 'Lucas Silva',
+            motivo: 'Divisão de hospedagem na praia',
+            valor: 350.00,
+            data: `${currentYear}-${mm}-02`,
+            pago: false
+          },
+          {
+            id: 'd-2',
+            quem: 'Beatriz Costa',
+            motivo: 'Ingressos do show',
+            valor: 220.00,
+            data: `${currentYear}-${mm}-04`,
+            pago: true
+          }
+        ],
+        recorrentes: [
+          {
+            id: 'r-1',
+            descricao: 'Condomínio Residencial',
+            valor: 680.00,
+            categoria: 'Moradia',
+            dono: 'Gabriel',
+            mesInicio: `${currentYear}-01`,
+            mesFim: ''
+          },
+          {
+            id: 'r-2',
+            descricao: 'Internet Fibra 600MB',
+            valor: 130.00,
+            categoria: 'Moradia',
+            dono: 'Mariana',
+            mesInicio: `${currentYear}-01`,
+            mesFim: ''
+          },
+          {
+            id: 'r-3',
+            descricao: 'Netflix & Spotify',
+            valor: 79.90,
+            categoria: 'Lazer',
+            dono: 'Gabriel',
+            mesInicio: `${currentYear}-01`,
+            mesFim: ''
+          }
+        ],
+        cartoes: ['Pix', 'Dinheiro', 'Débito', 'Crédito', 'Cartão Black', 'Cartão Nu', 'Cartão XP'],
+        categorias: ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Educação', 'Compras', 'Outros']
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+      } catch (_) {}
+    }
+
+    // ==========================================
+    // RECORRENTES LOGIC
+    // ==========================================
+    function isRecorrenteActive(rec, year, month) {
+      if (!rec || !rec.mesInicio) return false;
+      const targetStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+      if (targetStr < rec.mesInicio) return false;
+      if (rec.mesFim && targetStr > rec.mesFim) return false;
+      return true;
+    }
+
+    function getGastosDoPeriodo(year, month) {
+      const yearMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const directGastos = state.data.gastos.filter(g => g.data && g.data.startsWith(yearMonthPrefix));
+
+      const virtualRecs = state.data.recorrentes
+        .filter(r => isRecorrenteActive(r, year, month))
+        .map(r => ({
+          id: `rec-virtual-${r.id}`,
+          recId: r.id,
+          descricao: r.descricao,
+          valor: Number(r.valor) || 0,
+          data: `${yearMonthPrefix}-01`,
+          categoria: r.categoria,
+          dono: r.dono,
+          forma: 'Recorrente',
+          parcela: 'Fixo',
+          dividir: false,
+          anotacoes: 'Gasto automático mensal',
+          isRecorrente: true
+        }));
+
+      return [...directGastos, ...virtualRecs];
+    }
+
+    // ==========================================
+    // NAVIGATION & TABS
+    // ==========================================
+    function setupTabs() {
+      const tabButtons = document.querySelectorAll('.tab-btn');
+      tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetTabId = btn.getAttribute('data-tab');
+          if (targetTabId) trocarAba(targetTabId);
+        });
+      });
+
+      const btnGoAdd = document.getElementById('btnGoAddExpense');
+      if (btnGoAdd) {
+        btnGoAdd.addEventListener('click', () => {
+          trocarAba('tab-gastos');
+          const formEl = document.getElementById('formGastoCard');
+          if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
+        });
+      }
+    }
+
+    function trocarAba(tabId) {
+      state.activeTab = tabId;
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
+      });
+      document.querySelectorAll('.view-section').forEach(sec => {
+        sec.classList.toggle('active', sec.id === tabId);
+      });
+    }
+
+    function setupPeriodControls() {
+      const btnPrev = document.getElementById('btnPrevMonth');
+      const btnNext = document.getElementById('btnNextMonth');
+
+      if (btnPrev) btnPrev.addEventListener('click', () => mudarMes(-1));
+      if (btnNext) btnNext.addEventListener('click', () => mudarMes(1));
+      updatePeriodLabel();
+    }
+
+    function mudarMes(delta) {
+      let { year, month } = state.period;
+      month += delta;
+      if (month < 0) {
+        month = 11;
+        year -= 1;
+      } else if (month > 11) {
+        month = 0;
+        year += 1;
+      }
+      state.period = { year, month };
+      updatePeriodLabel();
+      renderAll();
+    }
+
+    function updatePeriodLabel() {
+      const label = document.getElementById('labelCurrentMonth');
+      if (label) {
+        label.textContent = `${MONTH_NAMES[state.period.month]} ${state.period.year}`;
+      }
+      const sub = document.getElementById('quadroSubtitulo');
+      if (sub) {
+        sub.textContent = `Divisão individual e compartilhada — ${MONTH_NAMES[state.period.month]} de ${state.period.year}`;
+      }
+    }
+
+    // ==========================================
+    // POPULATE DROPDOWNS
+    // ==========================================
+    function populateDropdowns() {
+      const { pessoas, categorias, cartoes } = state.data;
+
+      const donoSelects = [
+        document.getElementById('gastoDono'),
+        document.getElementById('ganhoPessoa'),
+        document.getElementById('recDono')
+      ];
+
+      donoSelects.forEach(select => {
+        if (!select) return;
+        const currentVal = select.value;
+        select.innerHTML = '';
+        if (pessoas.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = '(Sem pessoas cadastradas)';
+          select.appendChild(opt);
+        } else {
+          pessoas.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = p;
+            select.appendChild(opt);
+          });
+          if (currentVal && pessoas.includes(currentVal)) {
+            select.value = currentVal;
+          }
+        }
+      });
+
+      const catSelects = [
+        document.getElementById('gastoCategoria'),
+        document.getElementById('recCategoria')
+      ];
+      catSelects.forEach(select => {
+        if (!select) return;
+        const current = select.value;
+        select.innerHTML = '';
+        categorias.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          select.appendChild(opt);
+        });
+        if (current && categorias.includes(current)) {
+          select.value = current;
+        }
+      });
+
+      const formaSelect = document.getElementById('gastoForma');
+      if (formaSelect) {
+        const cur = formaSelect.value;
+        formaSelect.innerHTML = '';
+        cartoes.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          formaSelect.appendChild(opt);
+        });
+        if (cur && cartoes.includes(cur)) formaSelect.value = cur;
+      }
+    }
+
+    // ==========================================
+    // RENDER: DASHBOARD
+    // ==========================================
+    function renderDashboard() {
+      const { year, month } = state.period;
+      const yearMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+      const gastosMes = getGastosDoPeriodo(year, month);
+      const totalGastos = gastosMes.reduce((acc, g) => acc + (Number(g.valor) || 0), 0);
+      const countGastos = gastosMes.length;
+
+      const ganhosMes = state.data.entradas.filter(e => e.tipo === 'ganho' && e.data && e.data.startsWith(yearMonthPrefix));
+      const totalGanhos = ganhosMes.reduce((acc, e) => acc + (Number(e.valor) || 0), 0);
+
+      const totalGuardados = state.data.entradas
+        .filter(e => e.tipo === 'guardado')
+        .reduce((acc, e) => acc + (Number(e.valor) || 0), 0);
+
+      const saldo = totalGanhos - totalGastos;
+
+      const elGastos = document.getElementById('dashTotalGastos');
+      const elCountGastos = document.getElementById('dashCountGastos');
+      const elGanhos = document.getElementById('dashTotalGanhos');
+      const elCountGanhos = document.getElementById('dashCountGanhos');
+      const elGuardados = document.getElementById('dashTotalGuardados');
+      const elSaldo = document.getElementById('dashSaldoMes');
+      const elSaldoStatus = document.getElementById('dashSaldoStatus');
+
+      if (elGastos) elGastos.textContent = formatBRL(totalGastos);
+      if (elCountGastos) elCountGastos.textContent = `${countGastos} lançamento${countGastos === 1 ? '' : 's'}`;
+      if (elGanhos) elGanhos.textContent = formatBRL(totalGanhos);
+      if (elCountGanhos) elCountGanhos.textContent = `${ganhosMes.length} entrada${ganhosMes.length === 1 ? '' : 's'}`;
+      if (elGuardados) elGuardados.textContent = formatBRL(totalGuardados);
+      if (elSaldo) {
+        elSaldo.textContent = formatBRL(saldo);
+        elSaldo.style.color = saldo >= 0 ? '#10b981' : '#ef4444';
+      }
+      if (elSaldoStatus) {
+        elSaldoStatus.textContent = saldo >= 0 ? 'Superávit no período' : 'Déficit no período';
+      }
+
+      // Gráfico de Categorias
+      const catTotals = {};
+      state.data.categorias.forEach(c => { catTotals[c] = 0; });
+      gastosMes.forEach(g => {
+        const cat = g.categoria || 'Outros';
+        catTotals[cat] = (catTotals[cat] || 0) + (Number(g.valor) || 0);
+      });
+
+      const catChartEl = document.getElementById('chartCategoriaContainer');
+      if (catChartEl) {
+        catChartEl.innerHTML = '';
+        const sortedCats = Object.entries(catTotals).filter(([_, val]) => val > 0).sort((a, b) => b[1] - a[1]);
+
+        if (sortedCats.length === 0) {
+          catChartEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem 0;">Nenhum gasto registrado neste mês.</div>';
+        } else {
+          const maxCat = Math.max(...sortedCats.map(s => s[1]), 1);
+          sortedCats.forEach(([cat, val]) => {
+            const pct = Math.round((val / (totalGastos || 1)) * 100);
+            const barWidth = Math.max(4, Math.round((val / maxCat) * 100));
+            const row = document.createElement('div');
+            row.className = 'bar-row';
+            row.innerHTML = `
+              <div class="bar-label-line">
+                <span class="bar-name">${escapeHtml(cat)} (${pct}%)</span>
+                <span class="bar-val">${formatBRL(val)}</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill bar-fill-gold" style="width: ${barWidth}%;"></div>
+              </div>
+            `;
+            catChartEl.appendChild(row);
+          });
+        }
+      }
+
+      // Gráfico de Pessoas
+      const personTotals = {};
+      state.data.pessoas.forEach(p => { personTotals[p] = 0; });
+      const numPessoas = Math.max(state.data.pessoas.length, 1);
+
+      gastosMes.forEach(g => {
+        const val = Number(g.valor) || 0;
+        if (g.dividir) {
+          const parcela = val / numPessoas;
+          state.data.pessoas.forEach(p => {
+            personTotals[p] = (personTotals[p] || 0) + parcela;
+          });
+        } else {
+          const dono = g.dono || (state.data.pessoas[0] || 'Geral');
+          personTotals[dono] = (personTotals[dono] || 0) + val;
+        }
+      });
+
+      const personChartEl = document.getElementById('chartPessoaContainer');
+      if (personChartEl) {
+        personChartEl.innerHTML = '';
+        const sortedPersons = Object.entries(personTotals).sort((a, b) => b[1] - a[1]);
+        const maxPerson = Math.max(...sortedPersons.map(s => s[1]), 1);
+
+        if (totalGastos === 0 || sortedPersons.length === 0) {
+          personChartEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem 0;">Sem gastos calculados para as pessoas.</div>';
+        } else {
+          sortedPersons.forEach(([pessoa, val]) => {
+            const pct = Math.round((val / (totalGastos || 1)) * 100);
+            const barWidth = Math.max(4, Math.round((val / maxPerson) * 100));
+            const row = document.createElement('div');
+            row.className = 'bar-row';
+            row.innerHTML = `
+              <div class="bar-label-line">
+                <span class="bar-name">${escapeHtml(pessoa)} (${pct}%)</span>
+                <span class="bar-val" style="color: #c084fc;">${formatBRL(val)}</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill bar-fill-purple" style="width: ${barWidth}%;"></div>
+              </div>
+            `;
+            personChartEl.appendChild(row);
+          });
+        }
+      }
+
+      renderComparative(totalGastos);
+    }
+
+    function renderComparative(currentTotalGastos) {
+      let prevMonth = state.period.month - 1;
+      let prevYear = state.period.year;
+      if (prevMonth < 0) {
+        prevMonth = 11;
+        prevYear -= 1;
+      }
+
+      const prevGastos = getGastosDoPeriodo(prevYear, prevMonth);
+      const prevTotal = prevGastos.reduce((acc, g) => acc + (Number(g.valor) || 0), 0);
+      const diff = currentTotalGastos - prevTotal;
+
+      let pctChange = 0;
+      if (prevTotal > 0) {
+        pctChange = ((diff / prevTotal) * 100).toFixed(1);
+      } else if (currentTotalGastos > 0) {
+        pctChange = 100;
+      }
+
+      const isIncrease = diff > 0;
+      const isDecrease = diff < 0;
+      const arrow = isIncrease ? '↑' : (isDecrease ? '↓' : '→');
+      const arrowColor = isIncrease ? '#ef4444' : (isDecrease ? '#10b981' : '#9ca3af');
+
+      const container = document.getElementById('compMesAnteriorStats');
+      const desc = document.getElementById('compMesAnteriorDesc');
+
+      if (desc) {
+        desc.textContent = `Em comparação com ${MONTH_NAMES[prevMonth]} de ${prevYear} (${formatBRL(prevTotal)}):`;
+      }
+
+      if (container) {
+        container.innerHTML = `
+          <div style="display: flex; align-items: baseline; gap: 0.5rem;">
+            <span style="font-size: 2.2rem; font-weight: 800; color: ${arrowColor};">${arrow} ${Math.abs(pctChange)}%</span>
+            <span style="font-size: 0.95rem; color: var(--text-muted);">em relação ao mês anterior</span>
+          </div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #fff;">
+            Diferença de <span style="color: ${arrowColor};">${diff > 0 ? '+' : ''}${formatBRL(diff)}</span>
+          </div>
+        `;
+      }
+    }
+
+    // ==========================================
+    // RENDER & LOGIC: GASTOS
+    // ==========================================
+    function renderGastos() {
+      const { year, month } = state.period;
+      const yearMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const tbody = document.getElementById('tabelaGastosBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      const gastosDiretos = state.data.gastos.filter(g => g.data && g.data.startsWith(yearMonthPrefix));
+
+      const recAtivos = state.data.recorrentes
+        .filter(r => isRecorrenteActive(r, year, month))
+        .map(r => ({
+          id: `rec-virtual-${r.id}`,
+          recId: r.id,
+          descricao: r.descricao,
+          valor: Number(r.valor) || 0,
+          data: `${yearMonthPrefix}-01`,
+          categoria: r.categoria,
+          dono: r.dono,
+          forma: 'Recorrente',
+          parcela: 'Fixo',
+          dividir: false,
+          isRecorrente: true
+        }));
+
+      const listaCompleta = [...gastosDiretos, ...recAtivos].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+
+      const counterEl = document.getElementById('gastoPeriodoCount');
+      if (counterEl) counterEl.textContent = `${listaCompleta.length} registro(s)`;
+
+      if (listaCompleta.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              Nenhum gasto registrado para ${MONTH_NAMES[month]} de ${year}. Use o formulário acima para adicionar!
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      listaCompleta.forEach(g => {
+        const tr = document.createElement('tr');
+        const badgeRec = g.isRecorrente ? '<span class="tag-badge tag-purple" style="margin-left: 0.35rem;">🔄 Recorrente</span>' : '';
+        const badgeDiv = g.dividir ? '<span class="tag-badge tag-gold" style="margin-left: 0.35rem;">🤝 Dividido</span>' : '';
+
+        tr.innerHTML = `
+          <td>${formatDateBR(g.data)}</td>
+          <td><strong>${escapeHtml(g.descricao)}</strong> ${badgeRec} ${badgeDiv}</td>
+          <td><span class="tag-badge">${escapeHtml(g.categoria)}</span></td>
+          <td>${escapeHtml(g.dono || '-')}</td>
+          <td>${escapeHtml(g.forma || '-')}</td>
+          <td>${escapeHtml(g.parcela || '1/1')}</td>
+          <td style="font-weight: 700; color: #ef4444;">${formatBRL(g.valor)}</td>
+          <td style="text-align: right;">
+            ${g.isRecorrente ? `
+              <button type="button" class="btn-action btn-outline btn-sm" data-action="go-recorrente" data-id="${escapeHtml(g.recId)}" title="Gerenciar em Recorrentes">⚙️ Fixo</button>
+            ` : `
+              <button type="button" class="btn-action btn-outline btn-sm" data-action="edit-gasto" data-id="${escapeHtml(g.id)}" title="Editar gasto">✏️</button>
+              <button type="button" class="btn-action btn-danger-outline btn-sm" data-action="delete-gasto" data-id="${escapeHtml(g.id)}" title="Excluir gasto">🗑️</button>
+            `}
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function setupGastosForm() {
+      const form = document.getElementById('formGasto');
+      const btnCancel = document.getElementById('btnCancelarEdicaoGasto');
+      const inputData = document.getElementById('gastoData');
+
+      if (inputData && !inputData.value) inputData.value = getTodayISO();
+
+      if (form) {
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const editId = document.getElementById('gastoEditId').value;
+          const descricao = document.getElementById('gastoDescricao').value.trim();
+          const valor = parseFloat(document.getElementById('gastoValor').value);
+          const data = document.getElementById('gastoData').value;
+          const categoria = document.getElementById('gastoCategoria').value;
+          const dono = document.getElementById('gastoDono').value;
+          const forma = document.getElementById('gastoForma').value;
+          const parcela = document.getElementById('gastoParcela').value.trim() || '1/1';
+          const dividir = document.getElementById('gastoDividir').checked;
+          const anotacoes = document.getElementById('gastoAnotacoes').value.trim();
+
+          if (!descricao || isNaN(valor) || valor <= 0 || !data) {
+            alert('Por favor, preencha os campos obrigatórios corretamente.');
+            return;
+          }
+
+          if (editId) {
+            const idx = state.data.gastos.findIndex(g => g.id === editId);
+            if (idx !== -1) {
+              state.data.gastos[idx] = {
+                ...state.data.gastos[idx],
+                descricao, valor, data, categoria, dono, forma, parcela, dividir, anotacoes
+              };
+            }
+          } else {
+            const novoGasto = {
+              id: 'g-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+              descricao, valor, data, categoria, dono, forma, parcela, dividir, anotacoes
+            };
+            state.data.gastos.unshift(novoGasto);
+          }
+
+          salvarDados();
+          resetFormGasto();
+          renderAll();
+        });
+      }
+
+      if (btnCancel) {
+        btnCancel.addEventListener('click', resetFormGasto);
+      }
+
+      const tableEl = document.getElementById('tabelaGastos');
+      if (tableEl) {
+        tableEl.addEventListener('click', (e) => {
+          const btn = e.target.closest('button[data-action]');
+          if (!btn) return;
+          const action = btn.getAttribute('data-action');
+          const id = btn.getAttribute('data-id');
+
+          if (action === 'edit-gasto' && id) {
+            iniciarEdicaoGasto(id);
+          } else if (action === 'delete-gasto' && id) {
+            excluirGasto(id);
+          } else if (action === 'go-recorrente' && id) {
+            irParaRecorrentes(id);
+          }
+        });
+      }
+    }
+
+    function resetFormGasto() {
+      const editInput = document.getElementById('gastoEditId');
+      const descInput = document.getElementById('gastoDescricao');
+      const valInput = document.getElementById('gastoValor');
+      const dataInput = document.getElementById('gastoData');
+      const parcInput = document.getElementById('gastoParcela');
+      const divInput = document.getElementById('gastoDividir');
+      const anotInput = document.getElementById('gastoAnotacoes');
+      const titleEl = document.getElementById('formGastoTitulo');
+      const btnSave = document.getElementById('btnSalvarGasto');
+      const btnCancel = document.getElementById('btnCancelarEdicaoGasto');
+
+      if (editInput) editInput.value = '';
+      if (descInput) descInput.value = '';
+      if (valInput) valInput.value = '';
+      if (dataInput) dataInput.value = getTodayISO();
+      if (parcInput) parcInput.value = '1/1';
+      if (divInput) divInput.checked = false;
+      if (anotInput) anotInput.value = '';
+      if (titleEl) titleEl.textContent = '💸 Adicionar Novo Gasto';
+      if (btnSave) btnSave.textContent = '💾 Salvar Gasto';
+      if (btnCancel) btnCancel.style.display = 'none';
+    }
+
+    function iniciarEdicaoGasto(id) {
+      const gasto = state.data.gastos.find(g => g.id === id);
+      if (!gasto) return;
+
+      trocarAba('tab-gastos');
+      document.getElementById('gastoEditId').value = gasto.id;
+      document.getElementById('gastoDescricao').value = gasto.descricao;
+      document.getElementById('gastoValor').value = gasto.valor;
+      document.getElementById('gastoData').value = gasto.data;
+      document.getElementById('gastoCategoria').value = gasto.categoria;
+      if (gasto.dono) document.getElementById('gastoDono').value = gasto.dono;
+      document.getElementById('gastoForma').value = gasto.forma || 'Pix';
+      document.getElementById('gastoParcela').value = gasto.parcela || '1/1';
+      document.getElementById('gastoDividir').checked = !!gasto.dividir;
+      document.getElementById('gastoAnotacoes').value = gasto.anotacoes || '';
+
+      document.getElementById('formGastoTitulo').textContent = '✏️ Editar Gasto';
+      document.getElementById('btnSalvarGasto').textContent = '💾 Atualizar Gasto';
+      document.getElementById('btnCancelarEdicaoGasto').style.display = 'inline-flex';
+
+      const card = document.getElementById('formGastoCard');
+      if (card) card.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function excluirGasto(id) {
+      if (confirm('Tem certeza que deseja excluir este gasto?')) {
+        state.data.gastos = state.data.gastos.filter(g => g.id !== id);
+        salvarDados();
+        renderAll();
+      }
+    }
+
+    function irParaRecorrentes(recId) {
+      trocarAba('tab-recorrentes');
+      if (recId) iniciarEdicaoRecorrente(recId);
+    }
+
+    // ==========================================
+    // RENDER & LOGIC: GANHOS & GUARDADOS
+    // ==========================================
+    function renderEntradas() {
+      const { year, month } = state.period;
+      const yearMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const tbody = document.getElementById('tabelaGanhosBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      const entradasPeriodo = state.data.entradas.filter(e => e.data && e.data.startsWith(yearMonthPrefix))
+        .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+
+      if (entradasPeriodo.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              Nenhum ganho ou valor guardado registrado em ${MONTH_NAMES[month]} de ${year}.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      entradasPeriodo.forEach(e => {
+        const isGanho = e.tipo === 'ganho';
+        const tag = isGanho 
+          ? '<span class="tag-badge tag-green">💰 Ganho</span>' 
+          : '<span class="tag-badge tag-purple">🏦 Guardado</span>';
+        const colorVal = isGanho ? '#10b981' : '#c084fc';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${tag}</td>
+          <td>${formatDateBR(e.data)}</td>
+          <td><strong>${escapeHtml(e.descricao)}</strong></td>
+          <td>${escapeHtml(e.pessoa || '-')}</td>
+          <td style="font-weight: 700; color: ${colorVal};">${formatBRL(e.valor)}</td>
+          <td style="text-align: right;">
+            <button type="button" class="btn-action btn-outline btn-sm" data-action="edit-ganho" data-id="${escapeHtml(e.id)}" title="Editar registro">✏️</button>
+            <button type="button" class="btn-action btn-danger-outline btn-sm" data-action="delete-ganho" data-id="${escapeHtml(e.id)}" title="Excluir registro">🗑️</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function setupGanhosForm() {
+      const form = document.getElementById('formGanho');
+      const btnCancel = document.getElementById('btnCancelarEdicaoGanho');
+      const inputData = document.getElementById('ganhoData');
+      if (inputData && !inputData.value) inputData.value = getTodayISO();
+
+      if (form) {
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const editId = document.getElementById('ganhoEditId').value;
+          const tipo = document.getElementById('ganhoTipo').value;
+          const descricao = document.getElementById('ganhoDescricao').value.trim();
+          const valor = parseFloat(document.getElementById('ganhoValor').value);
+          const data = document.getElementById('ganhoData').value;
+          const pessoa = document.getElementById('ganhoPessoa').value;
+
+          if (!descricao || isNaN(valor) || valor <= 0 || !data) {
+            alert('Preencha os campos obrigatórios corretamente.');
+            return;
+          }
+
+          if (editId) {
+            const idx = state.data.entradas.findIndex(item => item.id === editId);
+            if (idx !== -1) {
+              state.data.entradas[idx] = { ...state.data.entradas[idx], tipo, descricao, valor, data, pessoa };
+            }
+          } else {
+            state.data.entradas.unshift({
+              id: 'e-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+              tipo, descricao, valor, data, pessoa
+            });
+          }
+
+          salvarDados();
+          resetFormGanho();
+          renderAll();
+        });
+      }
+
+      if (btnCancel) {
+        btnCancel.addEventListener('click', resetFormGanho);
+      }
+
+      const tableEl = document.getElementById('tabelaGanhos');
+      if (tableEl) {
+        tableEl.addEventListener('click', (e) => {
+          const btn = e.target.closest('button[data-action]');
+          if (!btn) return;
+          const action = btn.getAttribute('data-action');
+          const id = btn.getAttribute('data-id');
+
+          if (action === 'edit-ganho' && id) {
+            iniciarEdicaoGanho(id);
+          } else if (action === 'delete-ganho' && id) {
+            excluirGanho(id);
+          }
+        });
+      }
+    }
+
+    function resetFormGanho() {
+      const editInput = document.getElementById('ganhoEditId');
+      const descInput = document.getElementById('ganhoDescricao');
+      const valInput = document.getElementById('ganhoValor');
+      const dataInput = document.getElementById('ganhoData');
+      const titleEl = document.getElementById('formGanhoTitulo');
+      const btnCancel = document.getElementById('btnCancelarEdicaoGanho');
+
+      if (editInput) editInput.value = '';
+      if (descInput) descInput.value = '';
+      if (valInput) valInput.value = '';
+      if (dataInput) dataInput.value = getTodayISO();
+      if (titleEl) titleEl.textContent = '🏦 Novo Registro de Ganho ou Valor Guardado';
+      if (btnCancel) btnCancel.style.display = 'none';
+    }
+
+    function iniciarEdicaoGanho(id) {
+      const item = state.data.entradas.find(e => e.id === id);
+      if (!item) return;
+
+      trocarAba('tab-ganhos');
+      document.getElementById('ganhoEditId').value = item.id;
+      document.getElementById('ganhoTipo').value = item.tipo;
+      document.getElementById('ganhoDescricao').value = item.descricao;
+      document.getElementById('ganhoValor').value = item.valor;
+      document.getElementById('ganhoData').value = item.data;
+      if (item.pessoa) document.getElementById('ganhoPessoa').value = item.pessoa;
+      document.getElementById('formGanhoTitulo').textContent = '✏️ Editar Registro';
+      document.getElementById('btnCancelarEdicaoGanho').style.display = 'inline-flex';
+    }
+
+    function excluirGanho(id) {
+      if (confirm('Tem certeza que deseja excluir este registro?')) {
+        state.data.entradas = state.data.entradas.filter(e => e.id !== id);
+        salvarDados();
+        renderAll();
+      }
+    }
+
+    // ==========================================
+    // RENDER & LOGIC: QUEM ME DEVE
+    // ==========================================
+    function renderDividas() {
+      const tbody = document.getElementById('tabelaDividasBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      let totalPendente = 0;
+      let countPendente = 0;
+      let totalPago = 0;
+      let countPago = 0;
+
+      state.data.dividas.forEach(d => {
+        const val = Number(d.valor) || 0;
+        if (d.pago) {
+          totalPago += val;
+          countPago += 1;
+        } else {
+          totalPendente += val;
+          countPendente += 1;
+        }
+      });
+
+      const elPendTot = document.getElementById('dividasPendenteTotal');
+      const elPendCount = document.getElementById('dividasPendenteCount');
+      const elPagoTot = document.getElementById('dividasPagoTotal');
+      const elPagoCount = document.getElementById('dividasPagoCount');
+
+      if (elPendTot) elPendTot.textContent = formatBRL(totalPendente);
+      if (elPendCount) elPendCount.textContent = `${countPendente} acordo(s) pendente(s)`;
+      if (elPagoTot) elPagoTot.textContent = formatBRL(totalPago);
+      if (elPagoCount) elPagoCount.textContent = `${countPago} acordo(s) quitado(s)`;
+
+      if (state.data.dividas.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              Nenhum acordo ou empréstimo registrado. Use o formulário acima!
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      state.data.dividas.forEach(d => {
+        const tr = document.createElement('tr');
+        const badgeStatus = d.pago 
+          ? '<span class="tag-badge tag-green" style="cursor: pointer;" title="Clique para alternar">✅ Pago</span>' 
+          : '<span class="tag-badge tag-red" style="cursor: pointer;" title="Clique para alternar">⏳ Pendente</span>';
+
+        tr.innerHTML = `
+          <td><strong>${escapeHtml(d.quem)}</strong></td>
+          <td>${escapeHtml(d.motivo)}</td>
+          <td>${formatDateBR(d.data)}</td>
+          <td data-action="toggle-status" data-id="${escapeHtml(d.id)}">${badgeStatus}</td>
+          <td style="font-weight: 700; color: ${d.pago ? '#10b981' : '#f59e0b'};">${formatBRL(d.valor)}</td>
+          <td style="text-align: right;">
+            <button type="button" class="btn-action btn-outline btn-sm" data-action="edit-divida" data-id="${escapeHtml(d.id)}" title="Editar acordo">✏️</button>
+            <button type="button" class="btn-action btn-danger-outline btn-sm" data-action="delete-divida" data-id="${escapeHtml(d.id)}" title="Excluir acordo">🗑️</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function setupDividasForm() {
+      const form = document.getElementById('formDivida');
+      const btnCancel = document.getElementById('btnCancelarEdicaoDivida');
+      const inputData = document.getElementById('dividaData');
+      if (inputData && !inputData.value) inputData.value = getTodayISO();
+
+      if (form) {
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const editId = document.getElementById('dividaEditId').value;
+          const quem = document.getElementById('dividaQuem').value.trim();
+          const motivo = document.getElementById('dividaMotivo').value.trim();
+          const valor = parseFloat(document.getElementById('dividaValor').value);
+          const data = document.getElementById('dividaData').value;
+
+          if (!quem || !motivo || isNaN(valor) || valor <= 0 || !data) {
+            alert('Preencha os campos obrigatórios corretamente.');
+            return;
+          }
+
+          if (editId) {
+            const idx = state.data.dividas.findIndex(d => d.id === editId);
+            if (idx !== -1) {
+              state.data.dividas[idx] = { ...state.data.dividas[idx], quem, motivo, valor, data };
+            }
+          } else {
+            state.data.dividas.unshift({
+              id: 'd-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+              quem, motivo, valor, data, pago: false
+            });
+          }
+
+          salvarDados();
+          resetFormDivida();
+          renderAll();
+        });
+      }
+
+      if (btnCancel) {
+        btnCancel.addEventListener('click', resetFormDivida);
+      }
+
+      const tableEl = document.getElementById('tabelaDividas');
+      if (tableEl) {
+        tableEl.addEventListener('click', (e) => {
+          const actionTarget = e.target.closest('[data-action]');
+          if (!actionTarget) return;
+          const action = actionTarget.getAttribute('data-action');
+          const id = actionTarget.getAttribute('data-id');
+
+          if (action === 'toggle-status' && id) {
+            alternarStatusDivida(id);
+          } else if (action === 'edit-divida' && id) {
+            iniciarEdicaoDivida(id);
+          } else if (action === 'delete-divida' && id) {
+            excluirDivida(id);
+          }
+        });
+      }
+    }
+
+    function resetFormDivida() {
+      const editInput = document.getElementById('dividaEditId');
+      const quemInput = document.getElementById('dividaQuem');
+      const motInput = document.getElementById('dividaMotivo');
+      const valInput = document.getElementById('dividaValor');
+      const dataInput = document.getElementById('dividaData');
+      const titleEl = document.getElementById('formDividaTitulo');
+      const btnCancel = document.getElementById('btnCancelarEdicaoDivida');
+
+      if (editInput) editInput.value = '';
+      if (quemInput) quemInput.value = '';
+      if (motInput) motInput.value = '';
+      if (valInput) valInput.value = '';
+      if (dataInput) dataInput.value = getTodayISO();
+      if (titleEl) titleEl.textContent = '🤝 Novo Empréstimo / Valor a Receber';
+      if (btnCancel) btnCancel.style.display = 'none';
+    }
+
+    function alternarStatusDivida(id) {
+      const divida = state.data.dividas.find(d => d.id === id);
+      if (divida) {
+        divida.pago = !divida.pago;
+        salvarDados();
+        renderDividas();
+      }
+    }
+
+    function iniciarEdicaoDivida(id) {
+      const item = state.data.dividas.find(d => d.id === id);
+      if (!item) return;
+
+      trocarAba('tab-dividas');
+      document.getElementById('dividaEditId').value = item.id;
+      document.getElementById('dividaQuem').value = item.quem;
+      document.getElementById('dividaMotivo').value = item.motivo;
+      document.getElementById('dividaValor').value = item.valor;
+      document.getElementById('dividaData').value = item.data;
+      document.getElementById('formDividaTitulo').textContent = '✏️ Editar Acordo';
+      document.getElementById('btnCancelarEdicaoDivida').style.display = 'inline-flex';
+    }
+
+    function excluirDivida(id) {
+      if (confirm('Tem certeza que deseja remover esta cobrança?')) {
+        state.data.dividas = state.data.dividas.filter(d => d.id !== id);
+        salvarDados();
+        renderDividas();
+      }
+    }
+
+    // ==========================================
+    // RENDER & LOGIC: RECORRENTES
+    // ==========================================
+    function renderRecorrentes() {
+      const tbody = document.getElementById('tabelaRecorrentesBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      const { year, month } = state.period;
+
+      if (state.data.recorrentes.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              Nenhum gasto recorrente cadastrado. Adicione assinaturas, mensalidades ou contas fixas!
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      state.data.recorrentes.forEach(r => {
+        const ativoNesteMes = isRecorrenteActive(r, year, month);
+        const tagStatus = ativoNesteMes 
+          ? '<span class="tag-badge tag-green">Ativo no Mês</span>' 
+          : '<span class="tag-badge">Fora de Vigência</span>';
+
+        const vigenciaStr = `${r.mesInicio} até ${r.mesFim ? r.mesFim : 'indeterminado'}`;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${escapeHtml(r.descricao)}</strong></td>
+          <td style="font-weight: 700; color: #ef4444;">${formatBRL(r.valor)}</td>
+          <td><span class="tag-badge">${escapeHtml(r.categoria)}</span></td>
+          <td>${escapeHtml(r.dono || '-')}</td>
+          <td style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(vigenciaStr)}</td>
+          <td>${tagStatus}</td>
+          <td style="text-align: right;">
+            <button type="button" class="btn-action btn-outline btn-sm" data-action="edit-rec" data-id="${escapeHtml(r.id)}" title="Editar">✏️</button>
+            <button type="button" class="btn-action btn-danger-outline btn-sm" data-action="delete-rec" data-id="${escapeHtml(r.id)}" title="Excluir">🗑️</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function setupRecorrentesForm() {
+      const form = document.getElementById('formRecorrente');
+      const btnCancel = document.getElementById('btnCancelarEdicaoRec');
+      const inputMesInicio = document.getElementById('recMesInicio');
+      if (inputMesInicio && !inputMesInicio.value) inputMesInicio.value = getCurrentMonthISO();
+
+      if (form) {
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const editId = document.getElementById('recorrenteEditId').value;
+          const descricao = document.getElementById('recDescricao').value.trim();
+          const valor = parseFloat(document.getElementById('recValor').value);
+          const categoria = document.getElementById('recCategoria').value;
+          const dono = document.getElementById('recDono').value;
+          const mesInicio = document.getElementById('recMesInicio').value;
+          const mesFim = document.getElementById('recMesFim').value;
+
+          if (!descricao || isNaN(valor) || valor <= 0 || !mesInicio) {
+            alert('Preencha os campos obrigatórios corretamente.');
+            return;
+          }
+
+          if (editId) {
+            const idx = state.data.recorrentes.findIndex(r => r.id === editId);
+            if (idx !== -1) {
+              state.data.recorrentes[idx] = { ...state.data.recorrentes[idx], descricao, valor, categoria, dono, mesInicio, mesFim };
+            }
+          } else {
+            state.data.recorrentes.push({
+              id: 'r-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+              descricao, valor, categoria, dono, mesInicio, mesFim
+            });
+          }
+
+          salvarDados();
+          resetFormRecorrente();
+          renderAll();
+        });
+      }
+
+      if (btnCancel) {
+        btnCancel.addEventListener('click', resetFormRecorrente);
+      }
+
+      const tableEl = document.getElementById('tabelaRecorrentes');
+      if (tableEl) {
+        tableEl.addEventListener('click', (e) => {
+          const btn = e.target.closest('button[data-action]');
+          if (!btn) return;
+          const action = btn.getAttribute('data-action');
+          const id = btn.getAttribute('data-id');
+
+          if (action === 'edit-rec' && id) {
+            iniciarEdicaoRecorrente(id);
+          } else if (action === 'delete-rec' && id) {
+            excluirRecorrente(id);
+          }
+        });
+      }
+    }
+
+    function resetFormRecorrente() {
+      const editInput = document.getElementById('recorrenteEditId');
+      const descInput = document.getElementById('recDescricao');
+      const valInput = document.getElementById('recValor');
+      const mesIniInput = document.getElementById('recMesInicio');
+      const mesFimInput = document.getElementById('recMesFim');
+      const titleEl = document.getElementById('formRecorrenteTitulo');
+      const btnCancel = document.getElementById('btnCancelarEdicaoRec');
+
+      if (editInput) editInput.value = '';
+      if (descInput) descInput.value = '';
+      if (valInput) valInput.value = '';
+      if (mesIniInput) mesIniInput.value = getCurrentMonthISO();
+      if (mesFimInput) mesFimInput.value = '';
+      if (titleEl) titleEl.textContent = '🔄 Adicionar Gasto Recorrente (Fixo Mensal)';
+      if (btnCancel) btnCancel.style.display = 'none';
+    }
+
+    function iniciarEdicaoRecorrente(id) {
+      const r = state.data.recorrentes.find(item => item.id === id);
+      if (!r) return;
+
+      trocarAba('tab-recorrentes');
+      document.getElementById('recorrenteEditId').value = r.id;
+      document.getElementById('recDescricao').value = r.descricao;
+      document.getElementById('recValor').value = r.valor;
+      document.getElementById('recCategoria').value = r.categoria;
+      if (r.dono) document.getElementById('recDono').value = r.dono;
+      document.getElementById('recMesInicio').value = r.mesInicio;
+      document.getElementById('recMesFim').value = r.mesFim || '';
+      document.getElementById('formRecorrenteTitulo').textContent = '✏️ Editar Recorrência';
+      document.getElementById('btnCancelarEdicaoRec').style.display = 'inline-flex';
+    }
+
+    function excluirRecorrente(id) {
+      if (confirm('Tem certeza que deseja remover este gasto recorrente?')) {
+        state.data.recorrentes = state.data.recorrentes.filter(r => r.id !== id);
+        salvarDados();
+        renderAll();
+      }
+    }
+
+    // ==========================================
+    // RENDER: QUADRO (POST-ITS POR PESSOA)
+    // ==========================================
+    function renderQuadro() {
+      const { year, month } = state.period;
+      const gastosMes = getGastosDoPeriodo(year, month);
+      const container = document.getElementById('quadroColumnsContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (state.data.pessoas.length === 0) {
+        container.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 2rem;">
+            Nenhuma pessoa cadastrada. Clique no botão 👥 Pessoas no topo para começar!
+          </div>
+        `;
+        return;
+      }
+
+      const numPessoas = Math.max(state.data.pessoas.length, 1);
+
+      state.data.pessoas.forEach(pessoa => {
+        let totalPessoa = 0;
+        const itensPessoa = [];
+
+        gastosMes.forEach(g => {
+          const valTotal = Number(g.valor) || 0;
+          if (g.dividir) {
+            const parte = valTotal / numPessoas;
+            totalPessoa += parte;
+            itensPessoa.push({
+              descricao: g.descricao,
+              categoria: g.categoria,
+              data: g.data,
+              forma: g.forma,
+              parcela: g.parcela,
+              valorOriginal: valTotal,
+              valorParte: parte,
+              isDividido: true,
+              donoOriginal: g.dono,
+              isRecorrente: !!g.isRecorrente
+            });
+          } else if (g.dono === pessoa) {
+            totalPessoa += valTotal;
+            itensPessoa.push({
+              descricao: g.descricao,
+              categoria: g.categoria,
+              data: g.data,
+              forma: g.forma,
+              parcela: g.parcela,
+              valorOriginal: valTotal,
+              valorParte: valTotal,
+              isDividido: false,
+              isRecorrente: !!g.isRecorrente
+            });
+          }
+        });
+
+        const postit = document.createElement('div');
+        postit.className = 'postit-card';
+        postit.setAttribute('data-person', pessoa);
+
+        let itemsHtml = '';
+        if (itensPessoa.length === 0) {
+          itemsHtml = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 1.5rem 0;">Sem gastos atribuídos neste mês.</div>';
+        } else {
+          itensPessoa.forEach(item => {
+            const tagDiv = item.isDividido ? `<span class="tag-badge tag-gold">Parte de ${formatBRL(item.valorOriginal)} (pago por ${escapeHtml(item.donoOriginal)})</span>` : '';
+            const tagRec = item.isRecorrente ? '<span class="tag-badge tag-purple">🔄 Fixo</span>' : '';
+            itemsHtml += `
+              <div class="postit-item">
+                <div class="postit-item-head">
+                  <span>${escapeHtml(item.descricao)}</span>
+                  <span style="color: #ef4444;">${formatBRL(item.valorParte)}</span>
+                </div>
+                <div class="postit-item-meta">
+                  <span>📅 ${formatDateBR(item.data)}</span>
+                  <span>🏷️ ${escapeHtml(item.categoria)}</span>
+                  <span>💳 ${escapeHtml(item.forma || '-')} (${escapeHtml(item.parcela || '1/1')})</span>
+                  ${tagDiv}
+                  ${tagRec}
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        postit.innerHTML = `
+          <div class="postit-header">
+            <div>
+              <div class="postit-person">👤 ${escapeHtml(pessoa)}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">${itensPessoa.length} item(ns) neste mês</div>
+            </div>
+            <div class="postit-total">${formatBRL(totalPessoa)}</div>
+          </div>
+          <div class="postit-list">
+            ${itemsHtml}
+          </div>
+          <div style="margin-top: auto; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.06); text-align: right;">
+            <button type="button" class="btn-action btn-outline btn-sm" data-action="export-postit" data-person="${escapeHtml(pessoa)}">
+              📸 Salvar como Imagem
+            </button>
+          </div>
+        `;
+
+        container.appendChild(postit);
+      });
+    }
+
+    // ==========================================
+    // EXPORTAÇÃO DE IMAGEM (html2canvas)
+    // ==========================================
+    function exportarPostit(pessoaNome) {
+      if (typeof html2canvas === 'undefined') {
+        alert('A biblioteca de imagem html2canvas não pôde ser carregada.');
+        return;
+      }
+
+      const cardOriginal = document.querySelector(`.postit-card[data-person="${pessoaNome}"]`);
+      if (!cardOriginal) return;
+
+      const cloneArea = document.getElementById('exportCloneArea');
+      if (!cloneArea) return;
+      cloneArea.innerHTML = '';
+      cloneArea.style.width = '420px';
+
+      const headerTitle = document.createElement('div');
+      headerTitle.style.marginBottom = '15px';
+      headerTitle.innerHTML = `
+        <h2 style="margin: 0; color: #d4af37; font-size: 1.3rem;">FinControle Premium</h2>
+        <div style="color: #9ca3af; font-size: 0.85rem;">Quadro de Gastos — ${MONTH_NAMES[state.period.month]} ${state.period.year}</div>
+      `;
+      cloneArea.appendChild(headerTitle);
+
+      const clone = cardOriginal.cloneNode(true);
+      const btns = clone.querySelectorAll('button');
+      btns.forEach(b => b.remove());
+
+      const listEl = clone.querySelector('.postit-list');
+      if (listEl) {
+        listEl.style.maxHeight = 'none';
+        listEl.style.overflow = 'visible';
+      }
+      clone.style.height = 'auto';
+      clone.style.maxHeight = 'none';
+      clone.style.overflow = 'visible';
+
+      cloneArea.appendChild(clone);
+
+      setTimeout(() => {
+        html2canvas(cloneArea, {
+          backgroundColor: '#0f0f15',
+          scale: 2,
+          useCORS: true,
+          scrollX: 0,
+          scrollY: 0,
+          width: cloneArea.scrollWidth,
+          height: cloneArea.scrollHeight
+        }).then(canvas => {
+          const a = document.createElement('a');
+          a.href = canvas.toDataURL('image/png');
+          a.download = `quadro-${pessoaNome.toLowerCase().replace(/\s+/g, '-')}-${MONTH_NAMES[state.period.month]}-${state.period.year}.png`;
+          a.click();
+          cloneArea.innerHTML = '';
+        }).catch(err => {
+          console.error(err);
+          alert('Não foi possível gerar a imagem.');
+          cloneArea.innerHTML = '';
+        });
+      }, 100);
+    }
+
+    function exportarPanoramaCompleto() {
+      if (typeof html2canvas === 'undefined') {
+        alert('A biblioteca de imagem html2canvas não pôde ser carregada.');
+        return;
+      }
+
+      const { year, month } = state.period;
+      const gastosMes = getGastosDoPeriodo(year, month);
+      const totalGeral = gastosMes.reduce((acc, g) => acc + (Number(g.valor) || 0), 0);
+      const numPessoas = Math.max(state.data.pessoas.length, 1);
+
+      const cloneArea = document.getElementById('exportCloneArea');
+      if (!cloneArea) return;
+      cloneArea.innerHTML = '';
+      cloneArea.style.width = '1200px';
+
+      const panoramaHeader = document.createElement('div');
+      panoramaHeader.style.cssText = `
+        background: linear-gradient(135deg, #181826 0%, #111118 100%);
+        border: 1px solid rgba(212, 175, 55, 0.4);
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      `;
+      panoramaHeader.innerHTML = `
+        <div>
+          <h1 style="margin: 0; font-size: 1.8rem; color: #fff; display: flex; align-items: center; gap: 8px;">
+            <span>💎 FinControle Premium</span>
+            <span style="color: #d4af37; font-size: 1.2rem;">Panorama de Gastos</span>
+          </h1>
+          <p style="margin: 6px 0 0 0; color: #9ca3af; font-size: 1rem;">
+            Período: <strong>${MONTH_NAMES[month]} de ${year}</strong> (${escapeHtml(state.data.pessoas.join(', '))})
+          </p>
+        </div>
+        <div style="text-align: right; background: rgba(0,0,0,0.4); padding: 12px 20px; border-radius: 10px; border: 1px solid rgba(212,175,55,0.3);">
+          <div style="font-size: 0.85rem; color: #d4af37; text-transform: uppercase; font-weight: 700;">TOTAL GERAL DOS GASTOS</div>
+          <div style="font-size: 2rem; font-weight: 800; color: #ffffff;">${formatBRL(totalGeral)}</div>
+        </div>
+      `;
+      cloneArea.appendChild(panoramaHeader);
+
+      const colsContainer = document.createElement('div');
+      colsContainer.style.cssText = `
+        display: grid;
+        grid-template-columns: repeat(${Math.max(state.data.pessoas.length, 1)}, 1fr);
+        gap: 20px;
+        align-items: start;
+      `;
+
+      state.data.pessoas.forEach(pessoa => {
+        let totalPessoa = 0;
+        const itensPessoa = [];
+
+        gastosMes.forEach(g => {
+          const valTotal = Number(g.valor) || 0;
+          if (g.dividir) {
+            const parte = valTotal / numPessoas;
+            totalPessoa += parte;
+            itensPessoa.push({
+              descricao: g.descricao,
+              categoria: g.categoria,
+              data: g.data,
+              forma: g.forma,
+              parcela: g.parcela,
+              valorOriginal: valTotal,
+              valorParte: parte,
+              isDividido: true,
+              donoOriginal: g.dono,
+              isRecorrente: !!g.isRecorrente
+            });
+          } else if (g.dono === pessoa) {
+            totalPessoa += valTotal;
+            itensPessoa.push({
+              descricao: g.descricao,
+              categoria: g.categoria,
+              data: g.data,
+              forma: g.forma,
+              parcela: g.parcela,
+              valorOriginal: valTotal,
+              valorParte: valTotal,
+              isDividido: false,
+              isRecorrente: !!g.isRecorrente
+            });
+          }
+        });
+
+        const colCard = document.createElement('div');
+        colCard.style.cssText = `
+          background: #181824;
+          border: 1px solid rgba(212, 175, 55, 0.4);
+          border-radius: 12px;
+          padding: 16px;
+        `;
+
+        let listHtml = '';
+        if (itensPessoa.length === 0) {
+          listHtml = '<div style="color: #9ca3af; padding: 20px 0; text-align: center; font-size: 0.9rem;">Sem gastos no período</div>';
+        } else {
+          itensPessoa.forEach(item => {
+            const tagDiv = item.isDividido ? `<span style="font-size: 0.7rem; background: rgba(212,175,55,0.15); color: #f3cf65; padding: 2px 6px; border-radius: 4px;">Rateio (pago por ${escapeHtml(item.donoOriginal)})</span>` : '';
+            const tagRec = item.isRecorrente ? '<span style="font-size: 0.7rem; background: rgba(168,85,247,0.15); color: #c084fc; padding: 2px 6px; border-radius: 4px;">Fixo</span>' : '';
+            listHtml += `
+              <div style="background: rgba(255,255,255,0.03); border: 1px solid #28283a; border-radius: 8px; padding: 10px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; font-weight: 700; color: #fff; font-size: 0.9rem;">
+                  <span>${escapeHtml(item.descricao)}</span>
+                  <span style="color: #ef4444;">${formatBRL(item.valorParte)}</span>
+                </div>
+                <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 6px;">
+                  <span>📅 ${formatDateBR(item.data)}</span>
+                  <span>🏷️ ${escapeHtml(item.categoria)}</span>
+                  <span>💳 ${escapeHtml(item.forma || '-')}</span>
+                  ${tagDiv}
+                  ${tagRec}
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        colCard.innerHTML = `
+          <div style="border-bottom: 2px solid rgba(212,175,55,0.3); padding-bottom: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline;">
+            <div>
+              <div style="font-size: 1.25rem; font-weight: 800; color: #fff;">👤 ${escapeHtml(pessoa)}</div>
+              <div style="font-size: 0.8rem; color: #9ca3af;">${itensPessoa.length} itens</div>
+            </div>
+            <div style="font-size: 1.35rem; font-weight: 800; color: #f3cf65;">${formatBRL(totalPessoa)}</div>
+          </div>
+          <div>${listHtml}</div>
+        `;
+
+        colsContainer.appendChild(colCard);
+      });
+
+      cloneArea.appendChild(colsContainer);
+
+      setTimeout(() => {
+        html2canvas(cloneArea, {
+          backgroundColor: '#0b0b10',
+          scale: 2,
+          useCORS: true,
+          width: cloneArea.scrollWidth,
+          height: cloneArea.scrollHeight
+        }).then(canvas => {
+          const a = document.createElement('a');
+          a.href = canvas.toDataURL('image/png');
+          a.download = `panorama-gastos-${MONTH_NAMES[month]}-${year}.png`;
+          a.click();
+          cloneArea.innerHTML = '';
+        }).catch(err => {
+          console.error(err);
+          alert('Falha ao exportar panorama completo.');
+          cloneArea.innerHTML = '';
+        });
+      }, 150);
+    }
+
+    // ==========================================
+    // MODAL PESSOAS
+    // ==========================================
+    function setupPeopleModal() {
+      const modal = document.getElementById('modalPessoas');
+      const btnOpen = document.getElementById('btnOpenPeopleModal');
+      const btnClose = document.getElementById('btnCloseModalPessoas');
+      const btnDone = document.getElementById('btnFecharModalPessoas');
+      const btnAdd = document.getElementById('btnAddPessoa');
+      const inputNome = document.getElementById('novoNomePessoa');
+      const listaEl = document.getElementById('listaPessoasModal');
+
+      if (btnOpen && modal) {
+        btnOpen.addEventListener('click', () => {
+          renderListaPessoasModal();
+          modal.classList.add('active');
+        });
+      }
+
+      const fechar = () => {
+        if (modal) modal.classList.remove('active');
+      };
+
+      if (btnClose) btnClose.addEventListener('click', fechar);
+      if (btnDone) btnDone.addEventListener('click', fechar);
+
+      if (btnAdd && inputNome) {
+        btnAdd.addEventListener('click', () => {
+          const nome = inputNome.value.trim();
+          if (!nome) return;
+          if (state.data.pessoas.includes(nome)) {
+            alert('Esta pessoa já está cadastrada!');
+            return;
+          }
+          state.data.pessoas.push(nome);
+          salvarDados();
+          inputNome.value = '';
+          renderListaPessoasModal();
+          populateDropdowns();
+          renderAll();
+        });
+      }
+
+      if (listaEl) {
+        listaEl.addEventListener('click', (e) => {
+          const btn = e.target.closest('button[data-action="remove-pessoa"]');
+          if (!btn) return;
+          const idx = parseInt(btn.getAttribute('data-index'), 10);
+          if (!isNaN(idx)) {
+            removerPessoa(idx);
+          }
+        });
+      }
+    }
+
+    function renderListaPessoasModal() {
+      const lista = document.getElementById('listaPessoasModal');
+      if (!lista) return;
+      lista.innerHTML = '';
+
+      if (state.data.pessoas.length === 0) {
+        lista.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">Nenhuma pessoa cadastrada.</div>';
+        return;
+      }
+
+      state.data.pessoas.forEach((p, idx) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; background: #111118; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border);';
+        row.innerHTML = `
+          <span style="font-weight: 600; color: #fff;">👤 ${escapeHtml(p)}</span>
+          ${state.data.pessoas.length > 1 ? `
+            <button type="button" class="btn-action btn-danger-outline btn-sm" data-action="remove-pessoa" data-index="${idx}">Remover</button>
+          ` : '<span style="font-size: 0.75rem; color: var(--text-muted);">Principal</span>'}
+        `;
+        lista.appendChild(row);
+      });
+    }
+
+    function removerPessoa(idx) {
+      if (state.data.pessoas.length <= 1) {
+        alert('É necessário ter ao menos uma pessoa cadastrada.');
+        return;
+      }
+      const nome = state.data.pessoas[idx];
+      if (confirm(`Remover "${nome}"? Gastos atribuídos a ela passarão para a primeira pessoa.`)) {
+        state.data.pessoas.splice(idx, 1);
+        const novoDonoPadrao = state.data.pessoas[0] || '';
+        state.data.gastos.forEach(g => { if (g.dono === nome) g.dono = novoDonoPadrao; });
+        state.data.entradas.forEach(e => { if (e.pessoa === nome) e.pessoa = novoDonoPadrao; });
+        state.data.recorrentes.forEach(r => { if (r.dono === nome) r.dono = novoDonoPadrao; });
+        salvarDados();
+        renderListaPessoasModal();
+        populateDropdowns();
+        renderAll();
+      }
+    }
+
+    // ==========================================
+    // LIMPAR TODOS OS DADOS (LOCAL E NUVEM)
+    // ==========================================
+    async function limparTodosOsDados() {
+      const confirm1 = confirm("Tem certeza? Isso apaga TODOS os gastos, ganhos, dívidas e recorrentes cadastrados!");
+      if (!confirm1) return;
+
+      const confirm2 = confirm("Confirmação definitiva: Deseja realmente zerar todos os registros?");
+      if (!confirm2) return;
+
+      // 1. Limpa localStorage
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (e) {
+        console.error('Erro ao remover do localStorage', e);
+      }
+
+      // 2. Apaga da nuvem Firestore se conectado
+      if (firestoreDb && typeof firestoreDb.collection === 'function') {
+        try {
+          await firestoreDb.collection("app").doc("dados").delete();
+        } catch (err) {
+          console.warn('Erro ao deletar documento no Firestore:', err);
+        }
+      }
+
+      state.data = {
+        pessoas: ['Você'],
+        gastos: [],
+        entradas: [],
+        dividas: [],
+        recorrentes: [],
+        cartoes: ['Pix', 'Dinheiro', 'Débito', 'Crédito', 'Cartão Black', 'Cartão Nu', 'Cartão XP'],
+        categorias: ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Educação', 'Compras', 'Outros']
+      };
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+      } catch (_) {}
+
+      resetFormGasto();
+      resetFormGanho();
+      resetFormDivida();
+      resetFormRecorrente();
+
+      renderAll();
+      alert("Todos os dados foram limpos com sucesso no dispositivo e na nuvem!");
+    }
+
+    // ==========================================
+    // RENDER ALL
+    // ==========================================
+    function renderAll() {
+      populateDropdowns();
+      renderDashboard();
+      renderGastos();
+      renderEntradas();
+      renderDividas();
+      renderRecorrentes();
+      renderQuadro();
+    }
+
+    // ==========================================
+    // BOOTSTRAP
+    // ==========================================
+    document.addEventListener('DOMContentLoaded', () => {
+      const now = new Date();
+      state.period.year = now.getFullYear();
+      state.period.month = now.getMonth();
+
+      initFirebaseSafe();
+      carregarDados();
+      setupTabs();
+      setupPeriodControls();
+      setupGastosForm();
+      setupGanhosForm();
+      setupDividasForm();
+      setupRecorrentesForm();
+      setupPeopleModal();
+
+      const btnClear = document.getElementById('btnClearAllData');
+      if (btnClear) {
+        btnClear.addEventListener('click', limparTodosOsDados);
+      }
+
+      const btnPrint = document.getElementById('btnPrintReport');
+      if (btnPrint) {
+        btnPrint.addEventListener('click', () => window.print());
+      }
+
+      const btnExportAll = document.getElementById('btnExportFullQuadro');
+      if (btnExportAll) {
+        btnExportAll.addEventListener('click', exportarPanoramaCompleto);
+      }
+
+      const quadroContainer = document.getElementById('quadroColumnsContainer');
+      if (quadroContainer) {
+        quadroContainer.addEventListener('click', (e) => {
+          const btn = e.target.closest('button[data-action="export-postit"]');
+          if (!btn) return;
+          const person = btn.getAttribute('data-person');
+          if (person) exportarPostit(person);
+        });
+      }
+
+      renderAll();
+    });
+  </script>
+</body>
+</html>
 =======
     // ==========================================
     // LIMPAR TODOS OS DADOS
